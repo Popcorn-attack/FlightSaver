@@ -52,6 +52,16 @@ METROS: dict[str, tuple[str, ...]] = {
     "CHENGDU": ("CTU", "TFU"),
 }
 
+# Names used in natural-language search links (Google Flights "q=").
+METRO_NAMES: dict[str, str] = {
+    "LON": "London",
+    "LONDON": "London",
+    "BJS": "Beijing",
+    "BEIJING": "Beijing",
+    "SHANGHAI": "Shanghai",
+    "CHENGDU": "Chengdu",
+}
+
 # City codes used by OTAs that search by city rather than airport.
 AIRPORT_TO_CITY: dict[str, str] = {
     "LHR": "LON",

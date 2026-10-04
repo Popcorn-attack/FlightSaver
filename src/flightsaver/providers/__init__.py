@@ -9,9 +9,10 @@ from flightsaver.providers.base import Provider, ProviderError
 from flightsaver.providers.ctrip import CtripProvider
 from flightsaver.providers.google_flights import GoogleFlightsProvider
 from flightsaver.providers.kayak import KayakProvider
+from flightsaver.providers.trip_com import TripComProvider
 
 # Sources that drive a headless browser (need the ``browser`` extra).
-BROWSER_PROVIDERS = {"kayak": KayakProvider, "ctrip": CtripProvider}
+BROWSER_PROVIDERS = {"kayak": KayakProvider, "trip_com": TripComProvider, "ctrip": CtripProvider}
 ALL = {"google_flights": GoogleFlightsProvider, **BROWSER_PROVIDERS}
 
 
@@ -39,5 +40,6 @@ __all__ = [
     "GoogleFlightsProvider",
     "KayakProvider",
     "CtripProvider",
+    "TripComProvider",
     "default_providers",
 ]

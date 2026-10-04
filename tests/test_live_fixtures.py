@@ -9,8 +9,8 @@ import pytest
 
 from flightsaver import fx
 from flightsaver.models import SearchQuery
-from flightsaver.providers import ctrip, kayak
-from flightsaver.providers.browser import Captured
+from flightsaver.providers import ctrip, google_flights, kayak, trip_com
+from flightsaver.providers.browser import Captured, parse_sse
 from flightsaver.search import search
 
 LIVE = Path(__file__).parent / "fixtures" / "live"
@@ -24,8 +24,16 @@ def load(name):
         return json.load(f)
 
 
+def _body(c):
+    # The browser decodes event streams to their last JSON event; fixtures keep raw text.
+    if "event-stream" in c.get("ctype", "") and isinstance(c["body"], str):
+        events = parse_sse(c["body"])
+        return events[-1] if events else None
+    return c["body"]
+
+
 def bodies(name):
-    return [c["body"] for c in load(name)["captured"]]
+    return [_body(c) for c in load(name)["captured"]]
 
 
 def first_date(offers):
@@ -86,6 +94,47 @@ def test_airport_change_detected():
     assert len(changes) < len(offers) / 2
 
 
+def test_trip_com_one_way_and_round_trip():
+    ow = trip_com.parse(bodies("trip_com_ow"), OW, "https://trip")
+    rt = trip_com.parse(bodies("trip_com_rt"), RT, "https://trip")
+    check_offers(ow, "trip_com", "GBP")
+    check_offers(rt, "trip_com", "GBP")
+    assert min(o.price for o in rt) > min(o.price for o in ow)
+    assert any(o.stops == 0 and "Air China" in o.airlines for o in ow)
+
+
+def test_google_shopping_results():
+    texts = [c["body"] for c in load("google_ow")["captured"] if "GetShoppingResults" in c["url"]]
+    offers = google_flights.parse_shopping(texts, OW, "https://google")
+    assert len(offers) >= 5
+    for o in offers:
+        assert o.source == "google_flights" and o.price > 0 and o.legs
+        assert o.legs[0].from_airport == "LHR" and o.legs[-1].to_airport in {
+            "PVG",
+            "SHA",
+            "PKX",
+            "PEK",
+            "SZX",
+            "CAN",
+        }
+        assert o.departure.year == 2026
+    assert any(leg.flight_no for o in offers for leg in o.legs)
+
+
+def test_google_falls_back_to_browser():
+    texts = [c["body"] for c in load("google_ow")["captured"] if "GetShoppingResults" in c["url"]]
+
+    def blocked(q):
+        raise RuntimeError("IndexError from consent page")
+
+    def capture(url, match, done, timeout, locale="en-GB"):
+        assert "google.com/travel/flights" in url
+        return [Captured("x" + google_flights.SHOPPING, 200, None, t, 0.0) for t in texts]
+
+    p = google_flights.GoogleFlightsProvider(fetch=blocked, capture=capture)
+    assert len(p.search(OW)) >= 5
+
+
 def test_ctrip_finished_flag():
     assert ctrip._finished(bodies("ctrip_ow"))
     assert not ctrip._finished([])
@@ -97,7 +146,7 @@ def test_providers_with_recorded_capture_merge_in_gbp():
     def replay(name):
         def capture(url, match, done, timeout, locale="en-GB"):
             caps = [
-                Captured(c["url"], c["status"], c["post"], c["body"], 0.0)
+                Captured(c["url"], c["status"], c["post"], _body(c), 0.0)
                 for c in load(name)["captured"]
                 if match(c["url"])
             ]
@@ -111,10 +160,11 @@ def test_providers_with_recorded_capture_merge_in_gbp():
         [
             kayak.KayakProvider(capture=replay("kayak_ow")),
             ctrip.CtripProvider(capture=replay("ctrip_ow")),
+            trip_com.TripComProvider(capture=replay("trip_com_ow")),
         ],
     )
     assert result.errors == {}
-    assert {o.source for o in result.offers} == {"kayak", "ctrip"}
+    assert {o.source for o in result.offers} == {"kayak", "ctrip", "trip_com"}
     assert all(o.currency == "GBP" for o in result.offers)
     converted = [o for o in result.offers if o.original_currency == "CNY"]
     assert converted and all(o.original_price > o.price for o in converted)

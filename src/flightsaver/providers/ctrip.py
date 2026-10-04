@@ -20,12 +20,18 @@ API = "/international/search/api/search/"
 
 def _items(bodies: list[dict]):
     for body in bodies:
-        data = (body or {}).get("data") or {}
+        if not isinstance(body, dict):
+            continue
+        data = body.get("data") or {}
         yield from data.get("flightItineraryList") or []
 
 
 def _finished(bodies: list[dict]) -> bool:
-    return any((((b or {}).get("data") or {}).get("context") or {}).get("finished") for b in bodies)
+    return any(
+        ((b.get("data") or {}).get("context") or {}).get("finished")
+        for b in bodies
+        if isinstance(b, dict)
+    )
 
 
 def parse(bodies: list[dict], query: SearchQuery, search_url: str) -> list[FlightOffer]:

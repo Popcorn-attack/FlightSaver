@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from urllib.parse import urlencode
 
-from flightsaver.airports import METROS, city_code, expand
+from flightsaver.airports import METRO_NAMES, METROS, city_code, expand
 from flightsaver.models import BookingLink, SearchQuery
 
 # Skyscanner uses its own codes for multi-airport cities.
@@ -44,11 +44,18 @@ def _code(code: str) -> str:
 
 
 def google_flights(q: SearchQuery) -> BookingLink:
-    text = f"Flights from {_code(q.origin)} to {_code(q.destination)} on {q.depart.isoformat()}"
+    def place(code: str) -> str:
+        return METRO_NAMES.get(code.upper(), code.upper())
+
+    text = f"Flights from {place(q.origin)} to {place(q.destination)} on {q.depart.isoformat()}"
     if q.return_date:
         text += f" through {q.return_date.isoformat()}"
+    else:
+        text += " one way"
     if q.cabin != "economy":
-        text += f" {q.cabin.replace('-', ' ')}"
+        text += f" {q.cabin.replace('-', ' ')} class"
+    if q.adults > 1:
+        text += f" for {q.adults} adults"
     params = {"q": text, "hl": "en-GB", "curr": q.currency}
     return BookingLink(
         "google_flights",

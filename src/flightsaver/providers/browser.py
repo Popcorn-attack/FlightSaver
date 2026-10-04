@@ -7,6 +7,7 @@ returns, so we never have to reproduce signing or anti-bot tokens. Needs the
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -30,6 +31,37 @@ class Captured:
     post: str | None
     body: object
     at: float  # seconds after navigation started
+
+
+def parse_sse(text: str) -> list:
+    """JSON payloads of a server-sent-events body (``data: {...}`` lines)."""
+    events = []
+    for line in text.splitlines():
+        if line.startswith("data:"):
+            try:
+                events.append(json.loads(line[5:]))
+            except ValueError:
+                continue
+    return events
+
+
+def _decode(resp):
+    """JSON body, the last JSON event of an event stream, or else the raw text."""
+    if "event-stream" in resp.headers.get("content-type", ""):
+        try:
+            events = parse_sse(resp.text())
+        except Exception:
+            return None
+        return events[-1] if events else None
+    try:
+        return resp.json()
+    except Exception:
+        pass
+    try:
+        # e.g. Google's ")]}'"-prefixed batch responses; providers decode these.
+        return resp.text()
+    except Exception:
+        return None
 
 
 def available() -> bool:
@@ -83,9 +115,8 @@ def capture_json(
             def on_response(resp):
                 if not match(resp.url):
                     return
-                try:
-                    body = resp.json()
-                except Exception:
+                body = _decode(resp)
+                if body is None:
                     return
                 captured.append(
                     Captured(

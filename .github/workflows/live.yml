@@ -4,7 +4,7 @@ name: Live search smoke test
 # results and peak memory (the Render free plan has 512 MB).
 on:
   push:
-    paths: ["src/flightsaver/providers/**", "src/flightsaver/search.py", ".github/workflows/live.yml"]
+    paths: ["src/flightsaver/providers/**", "src/flightsaver/search.py", "Dockerfile", ".github/workflows/live.yml"]
   workflow_dispatch:
 
 jobs:
@@ -28,3 +28,20 @@ jobs:
           time uv run flightsaver search LON SHANGHAI "$dep" --no-history --limit 8
           time uv run flightsaver search MAN PEK "$dep" --return "$ret" --no-history --limit 8
           echo "peak extra RSS: $(( ($(cat /tmp/peak) - base) / 1024 )) MB"
+
+  render-sim:
+    # Same image as Render, limited to the free plan's 512 MB.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t flightsaver .
+      - name: Search inside a 512 MB container
+        run: |
+          dep=$(date -d '+45 days' +%F); ret=$(date -d '+59 days' +%F)
+          docker run --rm --memory=512m --memory-swap=512m --shm-size=256m \
+            -e FLIGHTSAVER_BROWSER_CONCURRENCY=1 flightsaver sh -c "
+              time uv run --no-sync flightsaver search LON SHANGHAI $dep --return $ret --no-history --limit 5;
+              echo exit=\$?;
+              echo peak_mb=\$((\$(cat /sys/fs/cgroup/memory.peak) / 1048576));
+              echo oom_events=\$(grep oom_kill /sys/fs/cgroup/memory.events)"
