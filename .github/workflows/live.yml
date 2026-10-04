@@ -4,7 +4,13 @@ name: Live search smoke test
 # results and peak memory (the Render free plan has 512 MB).
 on:
   push:
-    paths: ["src/flightsaver/providers/**", "src/flightsaver/search.py", "Dockerfile", ".github/workflows/live.yml"]
+    paths:
+      - "src/flightsaver/providers/**"
+      - "src/flightsaver/search.py"
+      - "src/flightsaver/explore.py"
+      - "src/flightsaver/web/quick.py"
+      - "Dockerfile"
+      - ".github/workflows/live.yml"
   workflow_dispatch:
 
 jobs:
@@ -79,13 +85,17 @@ jobs:
             -e FLIGHTSAVER_HISTORY=/tmp/h.sqlite3 flightsaver
           for i in $(seq 1 30); do curl -sf localhost:8000/healthz && break; sleep 1; done
           dep=$(date -d '+45 days' +%F)
-          for q in "伦敦飞上海 $dep" "曼彻斯特到北京 $dep 往返 两周"; do
+          for q in "伦敦飞上海 $dep" "查一下爱丁堡从十月底开始到11月中的飞国内任何城市的直飞航班信息与价格"; do
             start=$(date +%s)
             curl -s -X POST localhost:8000/api/search -H 'Content-Type: application/json' \
               -d "{\"message\": \"$q\"}" > out.json
             echo "== $q ($(( $(date +%s) - start ))s)"
-            python3 -c "import json; d=json.load(open('out.json')); print(d['message']); \
-          print('sources', d['data']['source_counts'], 'errors', list(d['data']['source_errors']))"
+            python3 -c "import json; d=json.load(open('out.json')); print(d.get('understood')); \
+          print(d['message']); print('sources', d['data']['source_counts'], \
+          'errors', d['data']['source_errors']); \
+          [print('  ', r) for r in d['data'].get('explore', {}).get('routes', [])]; \
+          [print('  offer', o['price'], o['airlines'], o['route'], o['departure']) \
+           for o in d['data']['offers'][:5]]"
           done
           docker exec fs sh -c 'echo peak_mb=$(( $(cat /sys/fs/cgroup/memory.peak) / 1048576 )); \
             grep oom_kill /sys/fs/cgroup/memory.events' | tee mem.txt

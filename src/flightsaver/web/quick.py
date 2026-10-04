@@ -10,8 +10,9 @@ import re
 from collections.abc import Callable
 from datetime import date
 
-from flightsaver import nlp
-from flightsaver.web.tools import parse_args
+from flightsaver import explore, nlp
+from flightsaver.airports import region
+from flightsaver.web.tools import package, parse_args
 
 LABELS = {
     "zh": {
@@ -39,9 +40,23 @@ def is_chinese(text: str) -> bool:
     return bool(re.search(r"[一-鿿]", text))
 
 
+PLACE_NAMES = {
+    nlp.ANY_CN: ("中国任意城市", "anywhere in China"),
+    nlp.ANY_UK: ("英国任意城市", "anywhere in the UK"),
+}
+
+
+def place(code: str | None, zh: bool) -> str:
+    names = PLACE_NAMES.get(code or "")
+    return (names[0] if zh else names[1]) if names else str(code)
+
+
 def describe(parsed: nlp.ParsedRequest, zh: bool) -> str:
     """One line restating how the request was understood."""
-    trip = f"{parsed.origin} → {parsed.destination} · {parsed.depart}"
+    when = f"{parsed.depart}"
+    if parsed.depart_until:
+        when += f" 至 {parsed.depart_until} 之间出发" if zh else f" to {parsed.depart_until}"
+    trip = f"{place(parsed.origin, zh)} → {place(parsed.destination, zh)} · {when}"
     if parsed.return_date:
         trip += f" / {parsed.return_date}"
     cabin = CABINS[parsed.cabin] if zh else parsed.cabin
@@ -109,6 +124,11 @@ def merge_context(parsed: nlp.ParsedRequest, context: dict | None) -> None:
     """Fill route/dates left out of a follow-up ("12月20日") from the previous request."""
     if not context:
         return
+    # Only a fragment ("12月20日", "改成曼彻斯特") continues the previous request; a message
+    # that names a route or a date of its own is a new request and must not inherit.
+    given = sum(x is not None for x in (parsed.origin, parsed.destination, parsed.depart))
+    if given > 1:
+        return
     if not parsed.origin and not parsed.destination:
         parsed.origin, parsed.destination = context.get("origin"), context.get("destination")
     elif not parsed.origin and context.get("origin") != parsed.destination:
@@ -131,8 +151,13 @@ def quick_search(
     engine: str = "rules",
     today: date | None = None,
     context: dict | None = None,
+    explore_fn: Callable[..., dict] | None = None,
 ) -> dict:
-    """Returns {"understood", "missing", "message", "parsed", "data"?}; never calls an LLM."""
+    """Returns {"understood", "missing", "message", "parsed", "data"?}; never calls an LLM.
+
+    Date windows and "any city" requests go to ``explore_fn`` (flexible search).
+    """
+    explore_fn = explore_fn or run_explore
     zh = is_chinese(text)
     if context and not re.search(r"[A-Za-z\u4e00-\u9fff]", text):
         zh = context.get("lang") == "zh"  # "2026-12-20" alone: keep the conversation's language
@@ -153,7 +178,13 @@ def quick_search(
             "parsed": _plain(parsed, zh),
         }
     try:
-        query, budget = parse_args(parsed.tool_input())
+        if explore.is_flexible(parsed):
+            data = explore_fn(parsed, engine)
+            message = summarise_explore(data, zh)
+        else:
+            query, budget = parse_args(parsed.tool_input())
+            data = search_fn(query, budget, engine, parsed.sort)
+            message = summarise(data, zh)
     except ValueError as exc:
         return {
             "understood": describe(parsed, zh),
@@ -161,8 +192,6 @@ def quick_search(
             "message": str(exc),
             "parsed": _plain(parsed, zh),
         }
-    data = search_fn(query, budget, engine, parsed.sort)
-    message = summarise(data, zh)
     if parsed.notes:
         message += (
             " 日期是按大概时间推算的，可以写具体日期再搜。"
@@ -187,3 +216,86 @@ def _plain(parsed: nlp.ParsedRequest, zh: bool) -> dict:
         "depart_date": parsed.depart.isoformat() if parsed.depart else None,
         "return_date": parsed.return_date.isoformat() if parsed.return_date else None,
     }
+
+
+def run_explore(parsed: nlp.ParsedRequest, engine: str = "rules") -> dict:
+    """Flexible search, packaged like a normal result plus an ``explore`` summary."""
+    for code in (parsed.origin, parsed.destination):
+        if code not in explore.GATEWAYS:
+            region(code)  # raises ValueError for unknown codes
+    ends = {
+        region(c) if c not in explore.GATEWAYS else ("CN" if c == nlp.ANY_CN else "UK")
+        for c in (parsed.origin, parsed.destination)
+    }
+    if ends != {"UK", "CN"}:
+        raise ValueError("only UK <-> China international routes are supported for now")
+    result, focus, summary = explore.explore(parsed)
+    data = package(focus, result, parsed.budget, engine, sort=parsed.sort)
+    data["explore"] = summary
+    return data
+
+
+def summarise_explore(data: dict, zh: bool) -> str:
+    ex = data["explore"]
+    routes = ex["routes"]
+    cur = data["query"]["currency"]
+    a, b = ex["window"]
+    window = a if a == b else (f"{a} 至 {b}" if zh else f"{a} to {b}")
+    lines = []
+    if zh:
+        lines.append(
+            f"灵活搜索：{place(ex['origin'], True)} → {place(ex['destination'], True)}，"
+            f"{window}，共查了 {len(routes)} 条航线。"
+        )
+    else:
+        lines.append(
+            f"Flexible search: {place(ex['origin'], False)} → "
+            f"{place(ex['destination'], False)}, {window}, {len(routes)} routes."
+        )
+    known = [r for r in routes if r["has_direct"] is not None]
+    if ex["direct_only"] and known and not any(r["has_direct"] for r in known):
+        names = "、".join(r["destination"] for r in known)
+        lines.append(
+            f"- 没有直飞：{place(ex['origin'], True)} 到 {names} 都没有直飞航班"
+            "（Trip.com 航线数据）。下面列的是转机最少的选择。"
+            if zh
+            else "- No nonstop service on any of these routes "
+            f"({', '.join(r['destination'] for r in known)}); showing the fewest-stop options."
+        )
+    elif data.get("stops_relaxed"):
+        lines.append(
+            "- 没有找到符合直飞要求的航班，下面列的是转机最少的选择。"
+            if zh
+            else "- No flights matched the stop limit; showing the fewest-stop options."
+        )
+    priced = sorted((r for r in routes if r["cheapest_price"]), key=lambda r: r["cheapest_price"])
+    for r in priced[:5]:
+        direct = (
+            ("有直飞" if r["has_direct"] else "无直飞")
+            if zh
+            else ("nonstop exists" if r["has_direct"] else "no nonstop")
+        )
+        if zh:
+            lines.append(
+                f"- {r['origin']} → {r['destination']}：区间最低 {r['cheapest_price']} {cur}"
+                f"（{r['cheapest_date']} 出发，{direct}）"
+            )
+        else:
+            lines.append(
+                f"- {r['origin']} → {r['destination']}: from {r['cheapest_price']} {cur} "
+                f"on {r['cheapest_date']} ({direct})"
+            )
+    failed = [r for r in routes if r["error"]]
+    if failed:
+        lines.append(
+            ("- 未能查询：" if zh else "- Could not check: ")
+            + ", ".join(f"{r['destination']}" for r in failed)
+        )
+    f = ex["focus"]
+    if data["offers"]:
+        lines.append(
+            (f"下面是 {f['origin']} → {f['destination']} {f['date']} 等日期的具体航班。")
+            if zh
+            else f"Flights below include {f['origin']} → {f['destination']} on {f['date']}."
+        )
+    return "\n".join(lines)

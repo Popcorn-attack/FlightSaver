@@ -149,6 +149,8 @@ class ParsedRequest:
     origin: str | None = None
     destination: str | None = None
     depart: date | None = None
+    # Flexible departure: any day from ``depart`` to ``depart_until`` (inclusive).
+    depart_until: date | None = None
     return_date: date | None = None
     adults: int = 1
     cabin: str = "economy"
@@ -315,8 +317,45 @@ def _safe_future(m: int, d: int, today: date) -> date | None:
         return None
 
 
+ANY_CN, ANY_UK = "ANY_CN", "ANY_UK"
+_ANY = re.compile(
+    r"(?P<cn>(国内|中国|大陆|内地|china)\s*(的)?\s*(任何|任意|所有|各个|随便|哪个|any)?\s*(一个)?\s*"
+    r"(城市|地方|机场|city|cities|airport|airports|anywhere)"
+    r"|(任何|任意|所有|随便|哪个)\s*(中国|国内)?\s*(城市|地方|机场)"
+    r"|anywhere in china|any (?:city|airport) in china)"
+    r"|(?P<uk>(英国)\s*(的)?\s*(任何|任意|所有|各个|随便|哪个)?\s*(城市|地方|机场)"
+    r"|anywhere in (?:the )?uk|any (?:city|airport) in (?:the )?uk)"
+)
+_CN_MONTHS = {
+    "十二": 12,
+    "十一": 11,
+    "十": 10,
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+_RANGE_LINK = re.compile(r"(到|至|~|～|-|–|—|until|till|to|through|between|and|之间)")
+_RETURN = re.compile(r"(回来|返回|返程|回程|往返|来回|return|back|round)")
+
+
+def normalise(text: str) -> str:
+    """Write Chinese month numerals as digits: 十月底 -> 10月底, 十一月 -> 11月."""
+    return re.sub(
+        r"(?<![\d一二三四五六七八九十])(十二|十一|十|[一二三四五六七八九])月",
+        lambda m: f"{_CN_MONTHS[m.group(1)]}月",
+        text,
+    )
+
+
 def parse(text: str, today: date | None = None) -> ParsedRequest:
     today = today or date.today()
+    text = normalise(text)
     low = text.lower()
     req = ParsedRequest()
 
@@ -339,16 +378,33 @@ def parse(text: str, today: date | None = None) -> ParsedRequest:
     req.origin = origins[0] if origins else None
     req.destination = next((c for c in dests if c != req.origin), None)
 
+    # "国内任何城市" / "anywhere in China": every gateway is searched.
+    m = _ANY.search(low)
+    if m:
+        anywhere = ANY_CN if m.group("cn") else ANY_UK
+        if re.search(r"(从|由|from)\s*$", low[max(0, m.start() - 4) : m.start()]):
+            req.origin, req.destination = anywhere, req.destination or req.origin
+        elif not req.destination:
+            req.destination = anywhere
+
     dates = _dates(text, today)
     if dates:
         pos, d, kind = dates[0]
         req.depart = d
         if kind == "approx":
             req.notes.append(f"approximate date: searched {d.isoformat()}")
-    for _pos, d, _ in dates[1:]:
-        if req.depart and d > req.depart:
-            req.return_date = d
-            break
+    if len(dates) > 1 and req.depart:
+        (p1, _, _), (p2, d2, _) = dates[0], dates[1]
+        between = low[p1 : p2 + 1]
+        if d2 > req.depart and _RANGE_LINK.search(between) and not _RETURN.search(low):
+            # "十月底到11月中": a window of departure dates, not a return date.
+            req.depart_until = d2
+            req.notes = [n for n in req.notes if not n.startswith("approximate")]
+    if not req.depart_until:
+        for _pos, d, _ in dates[1:]:
+            if req.depart and d > req.depart:
+                req.return_date = d
+                break
 
     req.wants_round_trip = req.return_date is not None or any(w in low for w in ROUND_TRIP_WORDS)
     if any(w in low for w in ("单程", "one way", "one-way")):

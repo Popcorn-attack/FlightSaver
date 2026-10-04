@@ -65,6 +65,12 @@
   .badge.buy { color: var(--buy); background: var(--buy-bg); }
   .badge.watch { color: var(--watch); background: var(--watch-bg); }
   .badge.skip { color: var(--skip); background: var(--skip-bg); }
+  .explore { margin: 4px 0 10px; overflow-x: auto; }
+  .explore .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .explore table { border-collapse: collapse; font-size: 13px; width: 100%; }
+  .explore th, .explore td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line);
+    white-space: nowrap; }
+  .explore th { color: var(--muted); font-weight: 500; }
   .sorts { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 6px; }
   .sorts button, .more { font: inherit; font-size: 13px; cursor: pointer; color: var(--text);
     background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; }
@@ -106,7 +112,13 @@
     .offer { grid-template-columns: 78px 1fr; }
     .badge, .offer a.book { grid-column: 2; justify-self: start; }
     .reasons { grid-column: 1 / 3; }
-    .sorts { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 6px; }
+    .explore { margin: 4px 0 10px; overflow-x: auto; }
+  .explore .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .explore table { border-collapse: collapse; font-size: 13px; width: 100%; }
+  .explore th, .explore td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line);
+    white-space: nowrap; }
+  .explore th { color: var(--muted); font-weight: 500; }
+  .sorts { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 6px; }
   .sorts button, .more { font: inherit; font-size: 13px; cursor: pointer; color: var(--text);
     background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; }
   .sorts button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -270,6 +282,22 @@
       ` · 找到 ${data.total_offers_found} 个` +
       (data.source_counts ? "（" + Object.entries(data.source_counts).map(([k, v]) =>
         `${esc(SOURCES[k] || k)} ${v}`).join(" · ") + "）" : "") + `</span></h3>`;
+    if (data.explore) {
+      const ex = data.explore;
+      const rows = ex.routes.slice().sort((a, b) =>
+        (a.cheapest_price ?? 1e9) - (b.cheapest_price ?? 1e9)).map(r => `<tr>
+          <td>${esc(r.origin)} → ${esc(r.destination)}</td>
+          <td>${r.has_direct === null ? "?" : r.has_direct ? "✅ 有" : "❌ 无"}</td>
+          <td>${r.cheapest_price ? Math.round(r.cheapest_price) + " " + esc(q.currency) : (r.error ? "查询失败" : "—")}</td>
+          <td>${esc(r.cheapest_date || "")}</td>
+          <td><a href="${safeUrl(r.link)}" target="_blank" rel="noopener">Trip.com ›</a></td></tr>`).join("");
+      html += `<div class="explore"><div class="label">日期区间 ${esc(ex.window[0])} 至 ${esc(ex.window[1])}，各航线区间最低价${ex.direct_only ? "（要求直飞）" : ""}</div>
+        <table><thead><tr><th>航线</th><th>直飞</th><th>区间最低</th><th>最低价日期</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+    }
+    if (data.stops_relaxed) {
+      html += `<div class="empty">没有符合直飞/转机次数要求的航班，下面列出转机最少的选择。</div>`;
+    }
     const errs = Object.entries(data.source_errors || {}).map(([k, v]) =>
       `${SOURCES[k] || k}: ${String(v).split("\n")[0].slice(0, 80)}`);
     if (!data.offers.length) {
@@ -323,7 +351,7 @@
   async function askQuick(text) {
     busy = true; send.disabled = true;
     add("msg user", `<div class="bubble">${esc(text)}</div>`);
-    const status = add("status", "正在搜索各平台…（约 5–30 秒）");
+    const status = add("status", "正在搜索各平台…（普通搜索约 10–20 秒；日期区间或任意城市约 1 分钟）");
     try {
       const res = await fetch("/api/search", {method: "POST", headers: authHeaders(),
         body: JSON.stringify({message: text, engine: $("engine").value, context: lastParsed})});

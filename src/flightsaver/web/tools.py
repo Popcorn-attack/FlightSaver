@@ -10,7 +10,7 @@ from flightsaver.decision import DecisionContext, evaluate
 from flightsaver.history import PriceHistory
 from flightsaver.models import SearchQuery
 from flightsaver.providers import Provider, default_providers
-from flightsaver.search import search
+from flightsaver.search import SearchResult, search
 
 MAX_OFFERS = 30  # sent to the page; it shows 10 and expands
 SORTS = ("best", "cheapest", "fastest")
@@ -96,44 +96,41 @@ def run_search(
     """
     result = search(query, providers if providers is not None else default_providers())
     past = history.cheapest_per_run(query) if history else []
-    verdicts, note = evaluate(engine, result.offers, DecisionContext(past, budget))
     if history and result.offers:
         history.record(query, result.offers)
+    return package(query, result, budget, engine, past, sort)
 
-    pairs = list(zip(result.offers, verdicts, strict=True))
+
+def package(
+    query: SearchQuery,
+    result: SearchResult,
+    budget: float | None,
+    engine: str = "rules",
+    past: list[float] | None = None,
+    sort: str = "best",
+) -> dict:
+    """Filter, judge, sort and serialise a search result."""
+    offers_in = result.offers
+    stops_relaxed = False
+    if query.max_stops is not None:
+        # Not every source honours a stop limit, so apply it here for all of them.
+        within = [o for o in offers_in if o.stops <= query.max_stops]
+        if within or not offers_in:
+            offers_in = within
+        else:
+            # Nothing matches: show the fewest-stop options and say so.
+            fewest = min(o.stops for o in offers_in)
+            offers_in = [o for o in offers_in if o.stops == fewest]
+            stops_relaxed = True
+    verdicts, note = evaluate(engine, offers_in, DecisionContext(past or [], budget))
+
+    pairs = list(zip(offers_in, verdicts, strict=True))
     if sort == "cheapest":
         pairs.sort(key=lambda p: (p[0].price, p[0].total_minutes))
     elif sort == "fastest":
         pairs.sort(key=lambda p: (p[0].total_minutes, p[0].price))
     else:
         pairs.sort(key=lambda p: (-p[1].score, p[0].price))
-    offers = []
-    for o, v in pairs[:MAX_OFFERS]:
-        offers.append(
-            {
-                "price": o.price,
-                "currency": o.currency,
-                "airlines": list(o.airlines),
-                "route": [o.legs[0].from_airport, *(leg.to_airport for leg in o.legs)],
-                "departure": o.departure.isoformat(timespec="minutes"),
-                "arrival": o.arrival.isoformat(timespec="minutes"),
-                "stops": o.stops,
-                "flying_minutes": o.flying_minutes,
-                "total_minutes": o.total_minutes,
-                "layovers": [{"airport": a, "minutes": m} for a, m in o.layovers],
-                "verdict": v.action,
-                "score": v.score,
-                "reasons": v.reasons,
-                "booking_url": o.booking_url,
-                "source": o.source,
-                "original_price": o.original_price,
-                "original_currency": o.original_currency,
-                "airport_change": o.airport_change,
-                "self_transfer": o.self_transfer,
-                "direct_price": o.direct_price,
-                "direct_seller": o.direct_seller,
-            }
-        )
     return {
         "query": {
             "origin": query.origin,
@@ -144,10 +141,12 @@ def run_search(
             "cabin": query.cabin,
             "currency": query.currency,
             "round_trip_prices": query.round_trip,
+            "max_stops": query.max_stops,
         },
         "sort": sort,
-        "offers": offers,
-        "total_offers_found": len(result.offers),
+        "offers": [offer_dict(o, v) for o, v in pairs[:MAX_OFFERS]],
+        "total_offers_found": len(offers_in),
+        "stops_relaxed": stops_relaxed,
         "platform_links": [
             {"name": x.name, "url": x.url, "prefilled": x.prefilled} for x in result.platform_links
         ],
@@ -155,6 +154,32 @@ def run_search(
         "source_counts": result.source_counts,
         "source_errors": result.errors,
         "engine_note": note,
+    }
+
+
+def offer_dict(o, v) -> dict:
+    return {
+        "price": o.price,
+        "currency": o.currency,
+        "airlines": list(o.airlines),
+        "route": [o.legs[0].from_airport, *(leg.to_airport for leg in o.legs)],
+        "departure": o.departure.isoformat(timespec="minutes"),
+        "arrival": o.arrival.isoformat(timespec="minutes"),
+        "stops": o.stops,
+        "flying_minutes": o.flying_minutes,
+        "total_minutes": o.total_minutes,
+        "layovers": [{"airport": a, "minutes": m} for a, m in o.layovers],
+        "verdict": v.action,
+        "score": v.score,
+        "reasons": v.reasons,
+        "booking_url": o.booking_url,
+        "source": o.source,
+        "original_price": o.original_price,
+        "original_currency": o.original_currency,
+        "airport_change": o.airport_change,
+        "self_transfer": o.self_transfer,
+        "direct_price": o.direct_price,
+        "direct_seller": o.direct_seller,
     }
 
 
