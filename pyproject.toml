@@ -1,0 +1,40 @@
+[project]
+name = "flightsaver"
+version = "0.1.0"
+description = "Search UK <-> China flights across travel platforms and airlines, with booking links."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "fast-flights>=3.1,<4",
+]
+
+[project.optional-dependencies]
+# Jev (TypeSafe AI) as an optional decision engine; resolved from vendor/ via uv.
+jev = ["typesafe-sdk"]
+
+[project.scripts]
+flightsaver = "flightsaver.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.uv.sources]
+typesafe-sdk = { path = "vendor/typesafe-sdk-python" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/flightsaver"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

@@ -1,0 +1,47 @@
+name: Flight search
+
+# Run a live search from GitHub's network (Actions tab -> Flight search -> Run workflow).
+on:
+  workflow_dispatch:
+    inputs:
+      origin:
+        description: "From (e.g. LON, MAN, PEK)"
+        default: "LON"
+      destination:
+        description: "To (e.g. SHANGHAI, PEK, CAN)"
+        default: "SHANGHAI"
+      depart:
+        description: "Departure date YYYY-MM-DD"
+        required: true
+      return_date:
+        description: "Return date YYYY-MM-DD (empty for one-way)"
+        default: ""
+      engine:
+        description: "Decision engine"
+        type: choice
+        options: [rules, jev]
+        default: rules
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --extra jev
+      - name: Search
+        env:
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+          ORIGIN: ${{ inputs.origin }}
+          DESTINATION: ${{ inputs.destination }}
+          DEPART: ${{ inputs.depart }}
+          RETURN_DATE: ${{ inputs.return_date }}
+          ENGINE: ${{ inputs.engine }}
+        run: |
+          args=(search "$ORIGIN" "$DESTINATION" "$DEPART" --engine "$ENGINE" --no-history)
+          if [ -n "$RETURN_DATE" ]; then args+=(--return "$RETURN_DATE"); fi
+          uv run flightsaver "${args[@]}" 2>&1 | tee result.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flight-search
+          path: result.txt
