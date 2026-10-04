@@ -31,7 +31,9 @@ def test_one_way_metro_business():
     q = SearchQuery("LON", "BEIJING", date(2026, 12, 20), adults=2, cabin="business")
     links = _links(q)
     assert "/lond/bjsa/261220/?" in links["skyscanner"].url
-    assert links["kayak"].url.endswith("LON-BJS/2026-12-20/business/2adults?sort=price_a")
+    assert links["kayak"].url.endswith(
+        "LHR,LGW,STN-PEK,PKX/2026-12-20/business/2adults?sort=price_a"
+    )
     assert "oneway-lon-bjs" in links["ctrip"].url
     assert "rtn=0" in links["skyscanner"].url
 

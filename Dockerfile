@@ -1,10 +1,13 @@
 FROM python:3.12-slim
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY pyproject.toml uv.lock README.md ./
 COPY vendor ./vendor
 COPY src ./src
-RUN uv sync --frozen --no-dev --extra web --extra jev
+RUN uv sync --frozen --no-dev --extra web --extra jev --extra browser \
+    && uv run --no-sync playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* /root/.cache
 ENV FLIGHTSAVER_HISTORY=/data/history.sqlite3 PORT=8000
 VOLUME /data
 EXPOSE 8000

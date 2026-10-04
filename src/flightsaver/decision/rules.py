@@ -37,6 +37,9 @@ class RuleEngine:
             else:
                 reasons.append(f"{(price_ratio - 1) * 100:.0f}% above cheapest")
             reasons.append("direct" if o.stops == 0 else f"{o.stops} stop(s)")
+            if o.airport_change:
+                reasons.append("change of airport between flights")
+                score -= 0.1
 
             action = "watch"
             rank = percentile_rank(o.price, ctx.history) if use_history else None

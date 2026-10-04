@@ -93,7 +93,8 @@ def cmd_search(args: argparse.Namespace) -> int:
             f"arr {o.arrival:%d %b %H:%M}  fly {hours}"
         )
         print(f"           {'; '.join(v.reasons)}")
-        print(f"           book: {o.booking_url}")
+        orig = f" (= {o.original_price:.0f} {o.original_currency})" if o.original_currency else ""
+        print(f"           via {o.source}{orig}: {o.booking_url}")
     _print_links("Compare on platforms:", result.platform_links)
     _print_links("Airline websites:", result.airline_links)
     return 0

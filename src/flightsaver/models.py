@@ -44,6 +44,7 @@ class Leg:
     arrival: datetime
     duration_minutes: int
     aircraft: str = ""
+    flight_no: str = ""
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,9 @@ class FlightOffer:
     legs: tuple[Leg, ...]
     booking_url: str
     round_trip_price: bool = False
+    # Set when the source quoted another currency and price was converted.
+    original_price: float | None = None
+    original_currency: str | None = None
 
     @property
     def stops(self) -> int:
@@ -71,6 +75,13 @@ class FlightOffer:
         return sum(leg.duration_minutes for leg in self.legs)
 
     @property
+    def airport_change(self) -> bool:
+        """True when a connection requires moving between airports (e.g. CTU -> TFU)."""
+        return any(
+            a.to_airport != b.from_airport for a, b in zip(self.legs, self.legs[1:], strict=False)
+        )
+
+    @property
     def departure(self) -> datetime:
         return self.legs[0].departure
 
@@ -79,11 +90,12 @@ class FlightOffer:
         return self.legs[-1].arrival
 
     def itinerary_key(self) -> tuple:
-        """Identifies the same physical itinerary across sources."""
-        return (
-            tuple(sorted(self.airlines)),
-            tuple((leg.from_airport, leg.to_airport, leg.departure) for leg in self.legs),
-        )
+        """Identifies the same physical itinerary across sources.
+
+        Airline names differ between sources (and languages), so only the flown
+        legs are compared.
+        """
+        return tuple((leg.from_airport, leg.to_airport, leg.departure) for leg in self.legs)
 
 
 @dataclass(frozen=True)

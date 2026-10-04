@@ -18,7 +18,8 @@ CABINS = ["economy", "premium-economy", "business", "first"]
 SEARCH_TOOL = {
     "name": "search_flights",
     "description": (
-        "Search live flight prices between the UK and mainland China / Hong Kong and get "
+        "Search live flight prices (Google Flights, KAYAK, Ctrip) between the UK and "
+        "mainland China / Hong Kong and get "
         "booking links for travel platforms (Google Flights, Skyscanner, KAYAK, Expedia, "
         "Trip.com, Ctrip, Qunar, Fliggy, LY.com) and airline websites. Prices for round "
         "trips are round-trip totals. Each offer carries a buy/watch/skip verdict. Call it "
@@ -106,6 +107,9 @@ def run_search(
                 "reasons": v.reasons,
                 "booking_url": o.booking_url,
                 "source": o.source,
+                "original_price": o.original_price,
+                "original_currency": o.original_currency,
+                "airport_change": o.airport_change,
             }
         )
     return {

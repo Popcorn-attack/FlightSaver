@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
+from flightsaver import fx
 from flightsaver.models import BookingLink, FlightOffer, SearchQuery
 from flightsaver.providers import Provider
 from flightsaver.providers.links import airline_links, platform_links
@@ -29,6 +30,29 @@ def dedupe(offers: list[FlightOffer]) -> list[FlightOffer]:
     return sorted(best.values(), key=lambda o: (o.price, o.stops, o.flying_minutes))
 
 
+def to_currency(offers: list[FlightOffer], currency: str) -> list[FlightOffer]:
+    """Express every offer in the query currency so prices are comparable."""
+    out = []
+    for o in offers:
+        if o.currency.upper() == currency.upper():
+            out.append(o)
+            continue
+        try:
+            price = fx.convert(o.price, o.currency, currency)
+        except ValueError:
+            continue
+        out.append(
+            replace(
+                o,
+                price=price,
+                currency=currency.upper(),
+                original_price=o.price,
+                original_currency=o.currency,
+            )
+        )
+    return out
+
+
 def search(query: SearchQuery, providers: list[Provider]) -> SearchResult:
     offers: list[FlightOffer] = []
     errors: dict[str, str] = {}
@@ -40,7 +64,7 @@ def search(query: SearchQuery, providers: list[Provider]) -> SearchResult:
             except Exception as exc:
                 errors[provider.name] = str(exc)
 
-    offers = dedupe(offers)
+    offers = dedupe(to_currency(offers, query.currency))
     carriers = sorted({name for o in offers for name in o.airlines})
     return SearchResult(
         query=query,

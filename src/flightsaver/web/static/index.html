@@ -183,6 +183,7 @@
     return div;
   }
 
+  const SOURCES = {google_flights: "Google Flights", kayak: "KAYAK", ctrip: "携程", trip_com: "Trip.com"};
   const fmtTime = (iso) => {
     const d = new Date(iso);
     return isNaN(d) ? iso : d.toLocaleString("zh-CN", {month: "numeric", day: "numeric",
@@ -203,13 +204,14 @@
     for (const o of data.offers) {
       const h = Math.floor(o.flying_minutes / 60), m = String(o.flying_minutes % 60).padStart(2, "0");
       html += `<div class="offer">
-        <div class="price">${Math.round(o.price)} <small>${esc(o.currency)}</small></div>
+        <div class="price">${Math.round(o.price)} <small>${esc(o.currency)}${o.original_currency
+          ? ` · ${o.original_currency === "CNY" ? "¥" : esc(o.original_currency) + " "}${Math.round(o.original_price)}` : ""}</small></div>
         <div><div class="airline">${esc(o.airlines.join(", "))}</div>
           <div class="detail">${esc(o.route.join(" › "))} · ${fmtTime(o.departure)} → ${fmtTime(o.arrival)}
-          · ${o.stops ? o.stops + " 次转机" : "直飞"} · 飞行 ${h}h${m}</div></div>
+          · ${o.stops ? o.stops + " 次转机" : "直飞"}${o.airport_change ? " · ⚠ 需换机场" : ""} · 飞行 ${h}h${m}</div></div>
         <span class="badge ${esc(o.verdict)}">${esc(o.verdict)}</span>
         <div class="reasons">${esc(o.reasons.join(" · "))}</div>
-        <a class="book" href="${safeUrl(o.booking_url)}" target="_blank" rel="noopener">查看 ›</a>
+        <a class="book" href="${safeUrl(o.booking_url)}" target="_blank" rel="noopener">${esc(SOURCES[o.source] || o.source)} ›</a>
       </div>`;
     }
     const chips = (links) => links.map(l =>

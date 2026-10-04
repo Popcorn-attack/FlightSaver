@@ -1,0 +1,30 @@
+name: Live search smoke test
+
+# Runs real searches through every provider from GitHub's network and reports
+# results and peak memory (the Render free plan has 512 MB).
+on:
+  push:
+    paths: ["src/flightsaver/providers/**", "src/flightsaver/search.py", ".github/workflows/live.yml"]
+  workflow_dispatch:
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FLIGHTSAVER_BROWSER_CONCURRENCY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --extra browser
+      - run: uv run playwright install --with-deps chromium
+      - name: Search (one-way and round trip)
+        run: |
+          (peak=0; while true; do
+             rss=$(ps -eo rss= | awk '{s+=$1} END {print s}'); [ "$rss" -gt "$peak" ] && peak=$rss
+             echo $peak > /tmp/peak; sleep 0.5; done) &
+          base=$(ps -eo rss= | awk '{s+=$1} END {print s}')
+          dep=$(date -d '+45 days' +%F); ret=$(date -d '+59 days' +%F)
+          time uv run flightsaver search LON SHANGHAI "$dep" --no-history --limit 8
+          time uv run flightsaver search MAN PEK "$dep" --return "$ret" --no-history --limit 8
+          echo "peak extra RSS: $(( ($(cat /tmp/peak) - base) / 1024 )) MB"

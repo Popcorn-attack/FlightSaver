@@ -86,7 +86,8 @@ def skyscanner(q: SearchQuery) -> BookingLink:
 
 
 def kayak(q: SearchQuery) -> BookingLink:
-    path = f"{_code(q.origin)}-{_code(q.destination)}/{q.depart.isoformat()}"
+    # KAYAK accepts comma-separated airports for multi-airport cities.
+    path = f"{','.join(expand(q.origin))}-{','.join(expand(q.destination))}/{q.depart.isoformat()}"
     if q.return_date:
         path += f"/{q.return_date.isoformat()}"
     if _KAYAK_CABIN[q.cabin]:

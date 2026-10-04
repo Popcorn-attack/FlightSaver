@@ -17,6 +17,9 @@ web = [
     "fastapi>=0.142.2",
     "uvicorn[standard]>=0.54.0",
 ]
+browser = [
+    "playwright>=1.48",
+]
 
 [project.scripts]
 flightsaver = "flightsaver.cli:main"
