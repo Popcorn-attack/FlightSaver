@@ -37,7 +37,9 @@ class Calendar:
 
     prices: dict[date, float] = field(default_factory=dict)
     currency: str | None = None
-    has_direct: bool | None = None  # does the route have any nonstop service?
+    # Trip.com's own flag. It said True for every Edinburgh -> China route although no
+    # nonstop exists, so explore() judges nonstop service from actual flights instead.
+    has_direct: bool | None = None
 
     def cheapest(self, start: date, end: date) -> tuple[date, float] | None:
         days = [(p, d) for d, p in self.prices.items() if start <= d <= end]
@@ -56,8 +58,9 @@ def parse_calendar(bodies: list) -> Calendar:
         if body.get("hasDirectFlight") is not None:
             cal.has_direct = bool(cal.has_direct) or bool(body["hasDirectFlight"])
         for day in body.get("lowPriceInCalenderDtoInfoList") or []:
-            if day.get("aDate") or not isinstance(day.get("currencyPrice"), (int, float)):
-                continue  # round-trip pairs; explore uses one-way calendars
+            price = day.get("currencyPrice")
+            if day.get("aDate") or not isinstance(price, (int, float)) or price <= 0:
+                continue  # round-trip pairs, and -1 = "no fare that day"
             d = datetime.fromtimestamp(day["dDate"], _BEIJING).date()
             cal.prices[d] = min(cal.prices.get(d, float("inf")), float(day["currencyPrice"]))
     return cal

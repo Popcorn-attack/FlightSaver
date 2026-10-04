@@ -287,7 +287,7 @@
       const rows = ex.routes.slice().sort((a, b) =>
         (a.cheapest_price ?? 1e9) - (b.cheapest_price ?? 1e9)).map(r => `<tr>
           <td>${esc(r.origin)} → ${esc(r.destination)}</td>
-          <td>${r.has_direct === null ? "?" : r.has_direct ? "✅ 有" : "❌ 无"}</td>
+          <td>${r.error ? "?" : r.nonstop_seen ? "✅ 有" : "❌ 未见"}</td>
           <td>${r.cheapest_price ? Math.round(r.cheapest_price) + " " + esc(q.currency) : (r.error ? "查询失败" : "—")}</td>
           <td>${esc(r.cheapest_date || "")}</td>
           <td><a href="${safeUrl(r.link)}" target="_blank" rel="noopener">Trip.com ›</a></td></tr>`).join("");

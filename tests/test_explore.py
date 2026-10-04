@@ -75,7 +75,7 @@ def test_explore_uses_calendar_then_searches_cheapest_day():
     assert (focus.destination, focus.depart) == ("BEIJING", date(2026, 11, 3))
     assert log == [("BEIJING", date(2026, 11, 3))]
     routes = {r["destination"]: r for r in summary["routes"]}
-    assert routes["BEIJING"]["cheapest_price"] == 300 and routes["SZX"]["has_direct"] is False
+    assert routes["BEIJING"]["cheapest_price"] == 300 and routes["SZX"]["nonstop_seen"] is False
 
 
 def test_no_nonstop_is_said_plainly_and_fewest_stops_shown():
@@ -138,3 +138,30 @@ def test_new_request_does_not_inherit_old_destination():
     assert out["missing"] == ["destination"] and calls == []
     quick_search("11月20日", fake, today=TODAY, context=old)  # a fragment still continues
     assert calls == ["WUH"]
+
+
+def test_calendar_ignores_no_fare_days():
+    from flightsaver.providers.trip_com import parse_calendar
+
+    body = {"lowPriceInCalenderDtoInfoList": [
+        {"dDate": 1793404800 - 8 * 3600, "currencyPrice": -1},  # 31 Oct: no fare
+        {"dDate": 1793491200 - 8 * 3600, "currencyPrice": 410},  # 1 Nov
+    ], "currency": "GBP", "hasDirectFlight": True}
+    cal = parse_calendar([body])
+    assert cal.cheapest(date(2026, 10, 1), date(2026, 11, 30)) == (date(2026, 11, 1), 410)
+
+
+def test_sources_are_asked_without_stop_limit():
+    trip, log = FakeTrip(), []
+    p = nlp.parse(TEXT, TODAY)
+    seen = []
+    orig = trip.explore
+
+    def spy(q):
+        seen.append(q.max_stops)
+        return orig(q)
+
+    trip.explore = spy
+    result, focus, _ = explore(p, trip=trip, providers_factory=lambda: [FakeFull(log)])
+    assert set(seen) == {None}  # so a route without nonstops still yields options
+    assert focus.max_stops == 0  # but the user's limit is applied to the merged list

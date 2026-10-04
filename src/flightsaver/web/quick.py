@@ -252,15 +252,17 @@ def summarise_explore(data: dict, zh: bool) -> str:
             f"Flexible search: {place(ex['origin'], False)} → "
             f"{place(ex['destination'], False)}, {window}, {len(routes)} routes."
         )
-    known = [r for r in routes if r["has_direct"] is not None]
-    if ex["direct_only"] and known and not any(r["has_direct"] for r in known):
-        names = "、".join(r["destination"] for r in known)
+    if ex["direct_only"] and not any(r["nonstop_seen"] for r in routes):
+        checked = [r for r in routes if not r["error"]]
+        names = "、".join(r["destination"] for r in checked)
+        n = sum(r["offers_found"] for r in checked)
         lines.append(
-            f"- 没有直飞：{place(ex['origin'], True)} 到 {names} 都没有直飞航班"
-            "（Trip.com 航线数据）。下面列的是转机最少的选择。"
+            f"- 没有直飞：在查到的 {n} 个航班里，{place(ex['origin'], True)} 到 {names} "
+            "都没有直飞，至少要转机一次。下面列的是转机最少、综合最划算的选择。"
             if zh
-            else "- No nonstop service on any of these routes "
-            f"({', '.join(r['destination'] for r in known)}); showing the fewest-stop options."
+            else f"- No nonstop: none of the {n} flights found from {ex['origin']} to "
+            f"{', '.join(r['destination'] for r in checked)} is nonstop; "
+            "showing the fewest-stop options."
         )
     elif data.get("stops_relaxed"):
         lines.append(
@@ -271,9 +273,9 @@ def summarise_explore(data: dict, zh: bool) -> str:
     priced = sorted((r for r in routes if r["cheapest_price"]), key=lambda r: r["cheapest_price"])
     for r in priced[:5]:
         direct = (
-            ("有直飞" if r["has_direct"] else "无直飞")
+            ("有直飞" if r["nonstop_seen"] else "未见直飞")
             if zh
-            else ("nonstop exists" if r["has_direct"] else "no nonstop")
+            else ("nonstop found" if r["nonstop_seen"] else "no nonstop seen")
         )
         if zh:
             lines.append(

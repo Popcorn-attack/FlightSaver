@@ -10,7 +10,7 @@ the most promising route is searched in full on its cheapest day.
 from __future__ import annotations
 
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date
 
 from flightsaver import fx
@@ -40,7 +40,7 @@ def is_flexible(p: ParsedRequest) -> bool:
 class RouteSummary:
     origin: str
     destination: str
-    has_direct: bool | None
+    nonstop_seen: bool  # any nonstop among the flights actually listed
     cheapest_date: str | None
     cheapest_price: float | None
     offers_found: int
@@ -56,7 +56,9 @@ def _routes(p: ParsedRequest) -> list[tuple[str, str]]:
 
 
 def _query(p: ParsedRequest, origin: str, dest: str, day: date) -> SearchQuery:
-    return SearchQuery(origin, dest, day, None, p.adults, p.cabin, p.currency, p.max_stops)
+    # Sources are asked without a stop limit; it is applied to the merged list, so a
+    # route without nonstops still shows its fewest-stop options.
+    return SearchQuery(origin, dest, day, None, p.adults, p.cabin, p.currency, None)
 
 
 def _price(value: float, currency: str | None, target: str) -> float:
@@ -102,7 +104,7 @@ def explore(
             RouteSummary(
                 origin=origin,
                 destination=dest,
-                has_direct=cal.has_direct,
+                nonstop_seen=any(o.stops == 0 for o in found),
                 cheapest_date=best_day[0].isoformat() if best_day else None,
                 cheapest_price=(
                     round(_price(best_day[1], cal.currency, p.currency)) if best_day else None
@@ -116,8 +118,8 @@ def explore(
 
     # Search the most promising route in full on its cheapest day.
     candidates = [s for s in summaries if s.cheapest_date]
-    if p.max_stops == 0 and any(s.has_direct for s in candidates):
-        candidates = [s for s in candidates if s.has_direct]
+    if p.max_stops == 0 and any(s.nonstop_seen for s in candidates):
+        candidates = [s for s in candidates if s.nonstop_seen]
     best = min(candidates, key=lambda s: s.cheapest_price, default=None)
     if best is not None:
         focus = _query(p, best.origin, best.destination, date.fromisoformat(best.cheapest_date))
@@ -135,6 +137,9 @@ def explore(
     if best is not None and focus.depart != start:
         detail = search(focus, providers_factory())
         offers.extend(detail.offers)
+        for s in summaries:
+            if (s.origin, s.destination) == (focus.origin, focus.destination):
+                s.nonstop_seen = s.nonstop_seen or any(o.stops == 0 for o in detail.offers)
         errors.update(detail.errors)
         for k, v in detail.source_counts.items():
             source_counts[k] = source_counts.get(k, 0) + v
@@ -161,4 +166,7 @@ def explore(
             "date": focus.depart.isoformat(),
         },
     }
+    # The page and the stop filter see the user's limit.
+    focus = replace(focus, max_stops=p.max_stops)
+    result.query = focus
     return result, focus, summary
