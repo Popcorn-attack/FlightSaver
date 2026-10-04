@@ -26,13 +26,13 @@ TARGETS = {
     "trip_com_ow": (
         f"https://uk.trip.com/flights/showfarefirst?dcity=lon&acity=sha&ddate={D}"
         "&triptype=ow&class=y&quantity=1&locale=en-GB&curr=GBP",
-        "/FlightMiddleSearch",
+        "*",
         30,
     ),
     "trip_com_rt": (
         f"https://uk.trip.com/flights/showfarefirst?dcity=lon&acity=sha&ddate={D}&rdate={R}"
         "&triptype=rt&class=y&quantity=1&locale=en-GB&curr=GBP",
-        "/FlightMiddleSearch",
+        "*",
         30,
     ),
     "ctrip_ow": (
@@ -58,7 +58,7 @@ TARGETS = {
     "google_ow": (
         f"https://www.google.com/travel/flights?q=Flights%20from%20LHR%20to%20PVG%20on%20{D}"
         "%20one%20way&hl=en-GB&curr=GBP",
-        "",
+        "*",
         20,
     ),
 }
@@ -87,15 +87,26 @@ def capture(browser, name: str, url: str, marker: str, wait: int) -> None:
     captured = []
 
     def on_response(resp):
-        if not marker or marker not in resp.url:
+        if marker == "*":
+            if resp.request.resource_type not in ("xhr", "fetch", "eventsource"):
+                return
+        elif not marker or marker not in resp.url:
             return
         try:
             body = resp.json()
         except Exception:
-            return
+            try:
+                body = resp.text()
+            except Exception:
+                return
+            if marker != "*":
+                return
         captured.append({"url": resp.url, "status": resp.status,
+                         "ctype": resp.headers.get("content-type", ""),
                          "post": resp.request.post_data, "body": body})
-        print(f"  captured {resp.status} {resp.url[:120]} at {time.time() - t0:.1f}s", flush=True)
+        size = len(json.dumps(body)) if not isinstance(body, str) else len(body)
+        print(f"  captured {resp.status} {size}B {resp.headers.get('content-type', '')[:40]} "
+              f"{resp.url[:150]} at {time.time() - t0:.1f}s", flush=True)
 
     page.on("response", on_response)
     t0 = time.time()
