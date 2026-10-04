@@ -18,6 +18,15 @@ MIN_HISTORY = 5  # runs needed before history percentiles are trusted
 VALUE_OF_TIME_GBP = float(os.environ.get("FLIGHTSAVER_VALUE_OF_TIME", "15"))
 LONG_LAYOVER = 6 * 60  # minutes
 SHORT_LAYOVER = 60  # minutes; tight for an international connection
+SAFE_SELF_TRANSFER = 180  # minutes; less is risky when tickets are separate
+
+
+def risky(o: FlightOffer) -> bool:
+    """Connections we never recommend, however cheap."""
+    waits = [m for _, m in o.layovers]
+    if any(m < SHORT_LAYOVER for m in waits):
+        return True
+    return o.self_transfer and any(m < SAFE_SELF_TRANSFER for m in waits)
 
 
 def percentile_rank(value: float, sample: list[float]) -> float:
@@ -55,7 +64,8 @@ def generalised_cost(o: FlightOffer, per_hour: float) -> tuple[float, list[str]]
         cost += per_hour * 2
         notes.append("change of airport between flights")
     if o.self_transfer:
-        cost += per_hour * 2
+        # Separate tickets: a delay on the first flight is the traveller's problem.
+        cost += per_hour * 4
         notes.append("self-transfer: separate tickets")
     return cost, notes
 
@@ -96,6 +106,9 @@ class RuleEngine:
                 action = "buy"
             elif score >= 0.97 or (rank is not None and rank <= 0.2 and score >= 0.85):
                 action = "buy"
+            if action == "buy" and risky(o):
+                action = "watch"
+                reasons.append("not recommended: connection too tight for the ticket type")
             if cost > 1.6 * best_cost or o.stops > 2:
                 action = "skip"
             verdicts.append(Verdict(action, round(min(score, 1.0), 3), reasons, self.name))

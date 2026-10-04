@@ -104,3 +104,11 @@ def test_run_search_sorts_three_ways():
     best = run_search(q, None, providers=[P()])["offers"]
     assert best[0]["total_minutes"] != 1260  # the 9h-wait option is never "best"
     assert best[0]["layovers"] in ([], [{"airport": "PEK", "minutes": 120}])
+
+
+def test_risky_connections_are_never_recommended():
+    risky = offer(399, [("LHR", "AMS", "12-01 07:00", "12-01 09:20", 80),
+                        ("AMS", "PVG", "12-01 10:00", "12-02 05:00", 660)], self_transfer=True)
+    v = RuleEngine().evaluate([risky], DecisionContext(budget=1000))[0]
+    assert v.action == "watch"
+    assert any("too tight" in r for r in v.reasons)
