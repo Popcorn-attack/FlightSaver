@@ -196,6 +196,7 @@ class GoogleFlightsProvider:
             match=lambda u: SHOPPING in u,
             done=lambda c: bool(c),
             timeout=25.0,
+            allowed_hosts=("google.com", "gstatic.com", "googleapis.com", "google.co.uk"),
         )
         offers = parse_shopping([c.body for c in captured], query, url)
         if not offers:

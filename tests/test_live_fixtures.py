@@ -127,7 +127,7 @@ def test_google_falls_back_to_browser():
     def blocked(q):
         raise RuntimeError("IndexError from consent page")
 
-    def capture(url, match, done, timeout, locale="en-GB"):
+    def capture(url, match, done, timeout, locale="en-GB", **kw):
         assert "google.com/travel/flights" in url
         return [Captured("x" + google_flights.SHOPPING, 200, None, t, 0.0) for t in texts]
 
@@ -144,7 +144,7 @@ def test_providers_with_recorded_capture_merge_in_gbp():
     fx.set_rates_for_tests({"GBP": 0.85, "CNY": 8.2})
 
     def replay(name):
-        def capture(url, match, done, timeout, locale="en-GB"):
+        def capture(url, match, done, timeout, locale="en-GB", **kw):
             caps = [
                 Captured(c["url"], c["status"], c["post"], _body(c), 0.0)
                 for c in load(name)["captured"]
@@ -180,3 +180,23 @@ def test_kayak_airline_direct_fares_and_self_transfer():
         assert o.direct_price >= o.price and o.direct_seller
     assert any(o.self_transfer for o in offers)
     assert all(o.total_minutes >= o.flying_minutes for o in offers)
+
+
+def test_lean_host_allowlist_and_crash_retry(monkeypatch):
+    from flightsaver.providers import browser
+
+    assert browser._host_allowed("https://ak-d.tripcdn.com/x.js", ("tripcdn.com",))
+    assert not browser._host_allowed("https://www.googletagmanager.com/gtm.js", ("trip.com",))
+    assert browser._host_allowed("https://anything.example", ())
+
+    calls = []
+
+    def once(*a):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("Page.wait_for_timeout: Page crashed")
+        return ["ok"]
+
+    monkeypatch.setattr(browser, "_capture_once", once)
+    assert browser.capture_json("u", lambda u: True, lambda c: True) == ["ok"]
+    assert len(calls) == 2

@@ -13,6 +13,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from flightsaver.providers.base import ProviderError
 
@@ -69,7 +70,7 @@ def _launch_args() -> list[str]:
             "--disable-extensions",
             "--disable-background-networking",
             "--disable-component-update",
-            "--js-flags=--max-old-space-size=256",
+            "--js-flags=--max-old-space-size=192",
         ]
     return args
 
@@ -131,11 +132,29 @@ def capture_json(
     done: Callable[[list[Captured]], bool],
     timeout: float = 30.0,
     locale: str = "en-GB",
+    allowed_hosts: tuple[str, ...] = (),
 ) -> list[Captured]:
     """Load ``url`` and collect JSON responses whose URL satisfies ``match``.
 
-    Stops as soon as ``done(captured)`` is true, or after ``timeout`` seconds.
+    Stops as soon as ``done(captured)`` is true, or after ``timeout`` seconds. On a
+    small host a page can run out of memory; it is retried once, as the crash
+    frees what the first attempt held. In lean mode only ``allowed_hosts`` (the
+    site's own domains) are loaded.
     """
+    try:
+        return _capture_once(url, match, done, timeout, locale, allowed_hosts)
+    except Exception as exc:
+        if "crash" not in str(exc).lower():
+            raise
+    return _capture_once(url, match, done, timeout, locale, allowed_hosts)
+
+
+def _host_allowed(request_url: str, allowed: tuple[str, ...]) -> bool:
+    host = urlsplit(request_url).hostname or ""
+    return not allowed or any(host == a or host.endswith("." + a) for a in allowed)
+
+
+def _capture_once(url, match, done, timeout, locale, allowed_hosts) -> list[Captured]:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
@@ -159,6 +178,7 @@ def capture_json(
                     route.abort()
                     if route.request.resource_type in skip_types
                     or (_lean() and any(t in route.request.url for t in TRACKERS))
+                    or (_lean() and not _host_allowed(route.request.url, allowed_hosts))
                     else route.continue_()
                 ),
             )

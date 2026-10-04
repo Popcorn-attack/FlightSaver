@@ -18,6 +18,7 @@ from flightsaver.providers.base import ProviderError
 from flightsaver.providers.links import trip_com as trip_link
 
 API = "/FlightListSearchSSE"
+HOSTS = ("trip.com", "tripcdn.com", "tripcdn.cn", "ctrip.com", "c-ctrip.com")
 CALENDAR = "/GetLowPriceInCalender"
 _BEIJING = timezone(timedelta(hours=8))  # calendar days are midnight Beijing time
 
@@ -148,6 +149,7 @@ class TripComProvider:
             match=lambda u: API in u or (want_calendar and CALENDAR in u),
             done=done,
             timeout=self.timeout,
+            allowed_hosts=HOSTS,
         )
         bodies = [c.body for c in captured]
         if not any(_is_list(b) for b in bodies):
