@@ -29,20 +29,35 @@ jobs:
           time uv run flightsaver search MAN PEK "$dep" --return "$ret" --no-history --limit 8
           echo "peak extra RSS: $(( ($(cat /tmp/peak) - base) / 1024 )) MB"
 
-  render-sim:
-    # Same image as Render, limited to the free plan's 512 MB.
+  container-sim:
+    # The deployed image under each host's memory limit:
+    #   cloudrun: 2 GiB, all providers, two browsers at a time
+    #   render-free: 512 MB, browser disabled -> Google Flights over HTTP only
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: cloudrun
+            memory: 2g
+            env: -e FLIGHTSAVER_BROWSER_CONCURRENCY=2
+          - name: render-free
+            memory: 512m
+            env: -e FLIGHTSAVER_BROWSER=0
+    name: container-sim (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t flightsaver .
-      - name: Search inside a 512 MB container
+      - name: Search inside a ${{ matrix.memory }} container
         run: |
           dep=$(date -d '+45 days' +%F); ret=$(date -d '+59 days' +%F)
-          docker run --rm --memory=512m --memory-swap=512m --shm-size=256m \
-            -e FLIGHTSAVER_BROWSER_CONCURRENCY=1 flightsaver bash -c "
-              time uv run --no-sync flightsaver search LON SHANGHAI $dep --return $ret --no-history --limit 5;
+          docker run --rm --memory=${{ matrix.memory }} --memory-swap=${{ matrix.memory }} \
+            --shm-size=256m ${{ matrix.env }} flightsaver bash -c "
+              time /app/.venv/bin/flightsaver search LON SHANGHAI $dep --return $ret --no-history --limit 3;
               code=\$?;
               echo peak_mb=\$((\$(cat /sys/fs/cgroup/memory.peak) / 1048576));
               grep oom_kill /sys/fs/cgroup/memory.events;
-              exit \$code" 2>&1
+              exit \$code" 2>&1 | tee out.txt
+          ! grep -q "Page crashed" out.txt
+          grep -q "oom_kill 0" out.txt

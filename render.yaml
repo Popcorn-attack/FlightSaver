@@ -13,7 +13,7 @@ services:
         generateValue: true # random passphrase; copy it from the service's Environment tab
       - key: TYPESAFE_API_KEY
         sync: false # optional, enables the Jev engine
-      - key: FLIGHTSAVER_BROWSER_CONCURRENCY
-        value: "1" # free plan has 512 MB RAM; one headless Chromium at a time
+      - key: FLIGHTSAVER_BROWSER
+        value: "0" # 512 MB is too small for headless Chromium: Google Flights (HTTP) only
       - key: FLIGHTSAVER_HISTORY
         value: /tmp/history.sqlite3 # free plan has no persistent disk

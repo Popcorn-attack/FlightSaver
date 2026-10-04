@@ -65,6 +65,9 @@ def _decode(resp):
 
 
 def available() -> bool:
+    """Playwright is installed and not disabled (FLIGHTSAVER_BROWSER=0 on small hosts)."""
+    if os.environ.get("FLIGHTSAVER_BROWSER", "1") == "0":
+        return False
     try:
         import playwright.sync_api  # noqa: F401
     except ImportError:

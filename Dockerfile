@@ -8,9 +8,9 @@ COPY src ./src
 RUN uv sync --frozen --no-dev --extra web --extra jev --extra browser \
     && uv run --no-sync playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/* /root/.cache
-ENV FLIGHTSAVER_HISTORY=/data/history.sqlite3 PORT=8000
-VOLUME /data
+RUN mkdir -p /data && chmod 777 /data
+ENV FLIGHTSAVER_HISTORY=/data/history.sqlite3 PORT=8000 PATH=/app/.venv/bin:$PATH
 EXPOSE 8000
 # Set ANTHROPIC_API_KEY (required), FLIGHTSAVER_ACCESS_TOKEN (recommended when public),
 # and optionally TYPESAFE_API_KEY for the Jev engine.
-CMD ["sh", "-c", "uv run --no-sync uvicorn flightsaver.web.app:app --host 0.0.0.0 --port $PORT"]
+CMD ["sh", "-c", "uvicorn flightsaver.web.app:app --host 0.0.0.0 --port $PORT"]
