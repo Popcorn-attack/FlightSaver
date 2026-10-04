@@ -1,0 +1,29 @@
+name: Probe sources
+
+# Discovers how travel sites return flight data, from GitHub's network.
+on:
+  push:
+    paths: ["probes/**", ".github/workflows/probe.yml"]
+  workflow_dispatch:
+    inputs:
+      sites:
+        description: "Space-separated site names (empty = all)"
+        default: ""
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install playwright "fast-flights>=3.1,<4"
+      - run: python -m playwright install --with-deps chromium
+      - run: python probes/probe.py ${{ inputs.sites }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-screenshots
+          path: probe-*.png
