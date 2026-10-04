@@ -133,3 +133,27 @@ def run_search(
         "source_errors": result.errors,
         "engine_note": note,
     }
+
+
+def compact_for_model(data: dict, limit: int = 5) -> dict:
+    """The fields the model needs to summarise a search; links and long lists stay out."""
+    return {
+        "query": data.get("query"),
+        "total_offers_found": data.get("total_offers_found", len(data.get("offers", []))),
+        "offers": [
+            {
+                "price": round(o["price"]),
+                "airlines": o.get("airlines"),
+                "route": "-".join(o.get("route", [])),
+                "departure": o.get("departure"),
+                "arrival": o.get("arrival"),
+                "stops": o.get("stops"),
+                "verdict": o.get("verdict"),
+                **({"airport_change": True} if o.get("airport_change") else {}),
+            }
+            for o in data.get("offers", [])[:limit]
+        ],
+        "source_errors": {
+            k: v.splitlines()[0][:120] for k, v in data.get("source_errors", {}).items()
+        },
+    }

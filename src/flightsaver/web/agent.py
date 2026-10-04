@@ -20,11 +20,29 @@ from datetime import date
 import anthropic
 
 from flightsaver.airports import CHINA_AIRPORTS, METROS, UK_AIRPORTS
-from flightsaver.web.tools import SEARCH_TOOL, parse_args, run_search
+from flightsaver.web.tools import SEARCH_TOOL, compact_for_model, parse_args, run_search
 
-MODEL = os.environ.get("FLIGHTSAVER_MODEL", "claude-opus-5-5")
-MAX_STEPS = 8  # model calls per user message
+# Haiku is the cheapest model and handles "parse the request, call one tool,
+# summarise" well. Set FLIGHTSAVER_MODEL to use a larger one.
+MODEL = os.environ.get("FLIGHTSAVER_MODEL", "claude-haiku-4-5")
+MAX_STEPS = 4  # model calls per user message
+MAX_TOKENS = 1500  # replies are short summaries
+MAX_HISTORY = 12  # messages kept before the context is reset, to bound input tokens
 MAX_JSON_RETRIES = 2
+# Models that accept output_config.effort and server-side refusal fallbacks.
+_EFFORT_MODELS = ("claude-opus-5", "claude-sonnet-5-5", "claude-fable-5")
+
+
+def request_options(model: str) -> dict:
+    """Per-model extras: cheap effort and fallbacks where supported, nothing on Haiku."""
+    if model.startswith(_EFFORT_MODELS):
+        return {
+            "output_config": {"effort": "low"},
+            "betas": ["server-side-fallback-2026-07-01"],
+            "fallbacks": "default",
+        }
+    return {}
+
 
 _AIRPORTS = "\n".join(
     [
@@ -42,12 +60,11 @@ How to work:
 "国庆", "Christmas") against today's date and say which dates you used.
 - If the route or the departure date is genuinely unclear, ask one short question instead of \
 guessing. Default to 1 adult, economy, GBP unless the user says otherwise.
-- For flexible dates ("around 20 Dec", "cheapest week in January"), search a few candidate dates \
-and compare them.
+- Call search_flights at most twice per message (each search is slow); for flexible dates pick \
+the most likely date and say the user can ask for others.
 - Only quote prices, times and airlines that appear in tool results. Never invent fares.
-- Summarise the best 2-4 options with price, airline, stops, times and the verdict, and explain \
-the trade-offs briefly. The page already shows full result cards and booking links, so do not \
-paste long URL lists.
+- Summarise the best 2-3 options in a few short lines (price, airline, stops, verdict). The \
+page already shows full result cards and booking links, so do not paste URLs.
 - FlightSaver only searches and links to booking sites; it does not book or take payment.
 - Domestic China routes and routes outside UK <-> China are not supported yet; say so.
 - If a source failed or returned nothing, tell the user and point them to the platform links.
@@ -85,10 +102,12 @@ class FlightAgent:
         client: anthropic.AsyncAnthropic | None = None,
         search_fn: SearchFn = run_search,
         model: str = MODEL,
+        on_usage: Callable | None = None,
     ) -> None:
         self.client = client or anthropic.AsyncAnthropic()
         self.search_fn = search_fn
         self.model = model
+        self.on_usage = on_usage
 
     async def _call_tool(self, block, engine: str) -> tuple[dict, dict | None]:
         """Run one tool_use block. Returns (tool_result, data for the page or None)."""
@@ -102,10 +121,11 @@ class FlightAgent:
             data = await asyncio.to_thread(self.search_fn, query, budget, engine)
         except Exception as exc:  # a failed search must not break the conversation
             return self._error(block.id, f"search failed: {exc}"), None
+        # The model gets a trimmed summary; the page renders the full result.
         return {
             "type": "tool_result",
             "tool_use_id": block.id,
-            "content": json.dumps(data, ensure_ascii=False),
+            "content": json.dumps(compact_for_model(data), ensure_ascii=False),
         }, data
 
     @staticmethod
@@ -120,6 +140,9 @@ class FlightAgent:
     async def chat(
         self, session: ChatSession, user_text: str, engine: str = "rules"
     ) -> AsyncIterator[dict]:
+        if len(session.messages) >= MAX_HISTORY:
+            session.messages.clear()
+            yield {"type": "status", "text": "Long conversation: earlier context cleared."}
         session.messages.append({"role": "user", "content": user_text})
         system = [{"type": "text", "text": system_prompt(), "cache_control": {"type": "ephemeral"}}]
         json_retries = 0
@@ -129,19 +152,19 @@ class FlightAgent:
             try:
                 async with self.client.beta.messages.stream(
                     model=self.model,
-                    max_tokens=16000,
+                    max_tokens=MAX_TOKENS,
                     system=system,
                     tools=[SEARCH_TOOL],
                     messages=session.messages,
-                    output_config={"effort": "medium"},
-                    betas=["server-side-fallback-2026-07-01"],
-                    fallbacks="default",
+                    **request_options(self.model),
                 ) as stream:
                     async for event in stream:
                         if event.type == "text":
                             yield {"type": "text", "text": event.text}
                     response = await stream.get_final_message()
                 json_retries = 0
+                if self.on_usage is not None and getattr(response, "usage", None) is not None:
+                    self.on_usage(response.usage)
             except ValueError:
                 # Tool input JSON the SDK could not parse; nothing was appended, so retry.
                 json_retries += 1

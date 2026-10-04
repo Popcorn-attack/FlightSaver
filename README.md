@@ -20,7 +20,10 @@ uv run flightsaver airports                       # 支持的机场和城市代�
 
 ## 对话网页
 
-用自然语言对话搜索，比如"12月20号伦敦飞上海，1月5号回来"或"春节前从爱丁堡回成都，预算600镑以内"。由 Claude 理解你的需求，调用 FlightSaver 搜索，再把结果整理成航班卡片和购票链接。
+用自然语言搜索，比如"12月20号伦敦飞上海，1月5号回来"或"春节前从爱丁堡回成都，预算600镑以内"。网页有两种模式：
+
+- **快速模式**（默认，不消耗 API 额度）：在本地用规则解析你的话（`src/flightsaver/nlp.py`），能识别中英文城市名、各种日期写法（12月20日、20 Dec、下周五、圣诞节、春节前、1月中旬等）、往返、舱位、人数、预算和直飞要求。解析后直接搜索，结果摘要由模板生成。如果缺信息，可以接着补一句，比如"12月20日"，会沿用上一句的城市；也可以点"让 AI 理解"。
+- **AI 对话**：由 Claude 理解需求并总结结果。默认用最便宜的 `claude-haiku-4-5`，并做了这些节省：给模型看的搜索结果精简到前 5 条且不带链接，回复限制在 1500 token 以内，对话超过 12 条消息会清空上下文。另外有每日次数上限，由 `FLIGHTSAVER_AI_DAILY_LIMIT` 控制，默认 20 次，设为 0 即完全关闭 AI。按 token 估算，每条 AI 消息约 0.5 美分。
 
 ```bash
 uv sync --extra web --extra jev --extra browser
@@ -67,10 +70,11 @@ docker run -p 8000:8000 -e ANTHROPIC_API_KEY=... -e FLIGHTSAVER_ACCESS_TOKEN=自
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | 必填，Claude API key |
+| `ANTHROPIC_API_KEY` | 只有 AI 模式需要；不设置时只能用快速模式 |
 | `FLIGHTSAVER_ACCESS_TOKEN` | 公开部署时建议设置；设置后打开网页需要输入这个口令，防止别人消耗你的 API 额度 |
 | `TYPESAFE_API_KEY` | 可选，启用 Jev 决策引擎 |
-| `FLIGHTSAVER_MODEL` | 可选，默认 `claude-opus-5-5` |
+| `FLIGHTSAVER_MODEL` | 可选，AI 模式使用的模型，默认 `claude-haiku-4-5`（最便宜） |
+| `FLIGHTSAVER_AI_DAILY_LIMIT` | 每天最多几条 AI 消息，默认 20；设为 `0` 则关闭 AI 模式，只保留免费的快速模式 |
 | `FLIGHTSAVER_PROVIDERS` | 可选，指定要用的数据源，逗号分隔，默认 `google_flights,kayak,trip_com,ctrip` |
 | `FLIGHTSAVER_BROWSER` | 设为 `0` 时禁用无头浏览器，适合小内存主机 |
 | `FLIGHTSAVER_BROWSER_CONCURRENCY` | 同时打开的浏览器数量，默认 2，每个约占几百 MB 内存 |
@@ -116,7 +120,8 @@ src/flightsaver/
   history.py           SQLite 价格历史
   decision/            rules.py（默认）、jev.py（备选）
   cli.py               命令行入口
-  web/                 对话网页：agent.py（Claude 工具调用循环）、app.py（FastAPI）、static/index.html
+  nlp.py               本地解析自然语言（快速模式，不调用 LLM）
+  web/                 网页：quick.py（快速模式）、agent.py（AI 模式）、app.py（FastAPI）、static/index.html
 vendor/typesafe-sdk-python/   TypeSafe SDK 的项目内 fork（MIT），见 UPSTREAM.md
 ```
 

@@ -15,5 +15,7 @@ services:
         sync: false # optional, enables the Jev engine
       - key: FLIGHTSAVER_BROWSER
         value: "0" # 512 MB is too small for headless Chromium: Google Flights (HTTP) only
+      - key: FLIGHTSAVER_AI_DAILY_LIMIT
+        value: "20" # AI chat messages per day; quick mode is unlimited and free. 0 turns AI off
       - key: FLIGHTSAVER_HISTORY
         value: /tmp/history.sqlite3 # free plan has no persistent disk

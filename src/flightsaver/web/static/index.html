@@ -44,6 +44,10 @@
   .bubble ul, .bubble ol { margin: 4px 0 8px; padding-left: 20px; }
   .status { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
   .status::before { content: "⟳ "; }
+  .understood { color: var(--muted); font-size: 13px; margin: -6px 0 10px; }
+  .understood::before { content: "理解为："; }
+  .ask-ai { font: inherit; font-size: 13px; margin-top: 8px; cursor: pointer; color: var(--accent);
+    background: var(--accent-soft); border: 0; border-radius: 8px; padding: 5px 10px; }
   .error { color: var(--skip); background: var(--skip-bg); border-radius: 10px; padding: 8px 12px;
     margin: 0 0 14px; font-size: 14px; }
   .results { margin: 0 0 16px; background: var(--panel); border: 1px solid var(--line);
@@ -101,6 +105,10 @@
   <h1>✈ FlightSaver</h1>
   <span class="sub">英国 ⇄ 中国 机票搜索</span>
   <span class="spacer"></span>
+  <select id="mode" title="模式">
+    <option value="quick">快速（不耗额度）</option>
+    <option value="ai">AI 对话</option>
+  </select>
   <select id="engine" title="决策引擎">
     <option value="rules">规则引擎</option>
     <option value="jev">Jev（备选）</option>
@@ -126,7 +134,7 @@
     <textarea id="input" rows="1" placeholder="例如：下周五伦敦飞上海，最多转一次" autofocus></textarea>
     <button id="send" type="submit">发送</button>
   </form>
-  <div class="note">只提供搜索结果和购票链接，不代为下单。价格以平台页面为准。</div>
+  <div class="note">只提供搜索结果和购票链接，不代为下单。价格以平台页面为准。快速模式在本地解析，不消耗 AI 额度。</div>
 </footer>
 <script>
 (() => {
@@ -137,16 +145,27 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch {} },
     del(k) { try { localStorage.removeItem(k); } catch {} },
   };
-  let sessionId = null, busy = false, token = store.get("fs_token") || "";
+  let sessionId = null, busy = false, token = store.get("fs_token") || "", lastParsed = null;
   const savedEngine = store.get("fs_engine"); if (savedEngine) $("engine").value = savedEngine;
   $("engine").onchange = (e) => store.set("fs_engine", e.target.value);
+  const savedMode = store.get("fs_mode"); if (savedMode) $("mode").value = savedMode;
+  $("mode").onchange = (e) => store.set("fs_mode", e.target.value);
+  let aiEnabled = true;
+  const setAiRemaining = (n) => {
+    $("mode").options[1].textContent = aiEnabled ? `AI 对话（今日剩 ${n} 次）` : "AI 对话（未开启）";
+  };
 
   fetch("/api/config").then(r => r.json()).then(cfg => {
     if (cfg.token_required && !token) {
       token = prompt("访问口令 / Access token") || "";
       store.set("fs_token", token);
     }
+    aiEnabled = cfg.ai_enabled;
+    setAiRemaining(cfg.ai_remaining);
+    if (!aiEnabled) { $("mode").value = "quick"; $("mode").options[1].disabled = true; }
   }).catch(() => {});
+  const authHeaders = () => ({"Content-Type": "application/json",
+    ...(token ? {"X-Access-Token": token} : {})});
 
   const esc = (s) => String(s).replace(/[&<>"']/g, c =>
     ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
@@ -225,10 +244,45 @@
     add("results", html);
   }
 
-  async function ask(text) {
+  function ask(text, useAi = false) {
     if (busy || !text.trim()) return;
-    busy = true; send.disabled = true;
     $("welcome")?.remove();
+    if (useAi || $("mode").value === "ai") return askAi(text);
+    return askQuick(text);
+  }
+
+  // Quick mode: parsed and summarised on the server without any AI call.
+  async function askQuick(text) {
+    busy = true; send.disabled = true;
+    add("msg user", `<div class="bubble">${esc(text)}</div>`);
+    const status = add("status", "正在搜索各平台…（约 5–30 秒）");
+    try {
+      const res = await fetch("/api/search", {method: "POST", headers: authHeaders(),
+        body: JSON.stringify({message: text, engine: $("engine").value, context: lastParsed})});
+      if (res.status === 401) { store.del("fs_token"); throw new Error("访问口令错误，请刷新页面重新输入"); }
+      if (!res.ok) throw new Error(`服务器错误 ${res.status}`);
+      const out = await res.json();
+      status.remove();
+      if (out.parsed) lastParsed = out.parsed;
+      if (out.understood) add("understood", esc(out.understood));
+      const msg = add("msg", `<div class="bubble">${md(out.message)}</div>`);
+      if (out.missing && out.missing.length && aiEnabled) {
+        const btn = document.createElement("button");
+        btn.className = "ask-ai"; btn.textContent = "让 AI 理解这句话（消耗 1 次额度）";
+        btn.onclick = () => { btn.remove(); ask(text, true); };
+        msg.firstChild.appendChild(btn);
+      }
+      if (out.data) renderResults(out.data);
+    } catch (e) {
+      status.remove();
+      add("error", esc(e.message || e));
+    } finally {
+      busy = false; send.disabled = false; input.focus();
+    }
+  }
+
+  async function askAi(text) {
+    busy = true; send.disabled = true;
     add("msg user", `<div class="bubble">${esc(text)}</div>`);
     let bubble = null, buf = "", status = null;
     const ensureBubble = () => {
@@ -238,7 +292,7 @@
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: {"Content-Type": "application/json", ...(token ? {"X-Access-Token": token} : {})},
+        headers: authHeaders(),
         body: JSON.stringify({message: text, session_id: sessionId, engine: $("engine").value}),
       });
       if (res.status === 401) { store.del("fs_token"); throw new Error("访问口令错误，请刷新页面重新输入"); }
@@ -255,6 +309,7 @@
           if (!chunk.startsWith("data: ")) continue;
           const ev = JSON.parse(chunk.slice(6));
           if (ev.type === "session") sessionId = ev.session_id;
+          else if (ev.type === "ai_remaining") setAiRemaining(ev.value);
           else if (ev.type === "text") {
             status?.remove(); status = null;
             const b = ensureBubble(); buf += ev.text; b.innerHTML = md(buf);

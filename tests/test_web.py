@@ -124,7 +124,9 @@ def test_agent_tool_loop():
     result = session.messages[2]["content"][0]
     assert result["tool_use_id"] == "t1" and "512" in result["content"]
     req = client.requests[0]
-    assert req["model"] == "claude-opus-5-5" and req["fallbacks"] == "default"
+    # Default is the cheap model, with no effort/fallback extras (Haiku rejects them).
+    assert req["model"] == "claude-haiku-4-5" and "fallbacks" not in req
+    assert req["max_tokens"] <= 2000
     assert req["tools"][0]["name"] == "search_flights"
 
 
@@ -187,7 +189,112 @@ def test_app_token(monkeypatch):
         FlightAgent(client=FakeClient([([text("ok")], "end_turn")]), search_fn=lambda *a: {})
     )
     tc = TestClient(app)
-    assert tc.get("/api/config").json() == {"token_required": True}
+    cfg = tc.get("/api/config").json()
+    assert cfg["token_required"] is True and cfg["ai_enabled"] is True
     assert tc.post("/api/chat", json={"message": "hi"}).status_code == 401
     ok = tc.post("/api/chat", json={"message": "hi"}, headers={"X-Access-Token": "s3cret"})
     assert ok.status_code == 200
+
+
+def test_request_options_per_model():
+    from flightsaver.web.agent import request_options
+
+    assert request_options("claude-haiku-4-5") == {}
+    opts = request_options("claude-opus-5-5")
+    assert opts["output_config"] == {"effort": "low"} and opts["fallbacks"] == "default"
+
+
+def test_compact_for_model_drops_links():
+    from conftest import make_offer
+
+    class P:
+        name = "fake"
+
+        def search(self, q):
+            return [make_offer(500 + i, dep_hour=6 + i) for i in range(9)]
+
+    q, _ = parse_args({"origin": "LHR", "destination": "PVG", "depart_date": FUTURE})
+    from flightsaver.web.tools import compact_for_model
+
+    small = compact_for_model(run_search(q, None, providers=[P()]))
+    assert len(small["offers"]) == 5
+    text = json.dumps(small)
+    assert "http" not in text and "platform_links" not in text
+
+
+def test_history_is_reset_when_long():
+    from flightsaver.web.agent import MAX_HISTORY
+
+    session = ChatSession(messages=[{"role": "user", "content": "x"}] * MAX_HISTORY)
+    client = FakeClient([([text("ok")], "end_turn")])
+    events = collect(FlightAgent(client=client, search_fn=lambda *a: {}), session, "hi")
+    assert events[0]["type"] == "status"
+    assert len(client.requests[0]["messages"]) == 1
+
+
+def test_quick_search_endpoint_needs_no_ai(monkeypatch):
+    from conftest import make_offer
+    from fastapi.testclient import TestClient
+
+    import flightsaver.web.app as web_app
+
+    calls = []
+
+    def fake_search(query, budget, engine):
+        calls.append((query.origin, query.destination, query.depart.isoformat(), budget))
+
+        class P:
+            name = "fake"
+
+            def search(self, q):
+                return [make_offer(480), make_offer(620, stops=1, dep_hour=7)]
+
+        return run_search(query, budget, engine, providers=[P()])
+
+    monkeypatch.setattr(web_app, "_search_with_history", fake_search)
+    client = FakeClient([])  # any AI call would fail: no scripted turns
+    tc = TestClient(web_app.create_app(FlightAgent(client=client, search_fn=fake_search)))
+    res = tc.post("/api/search", json={"message": f"伦敦飞上海 {FUTURE} 预算500镑"}).json()
+    assert calls == [("LON", "SHANGHAI", FUTURE, 500.0)]
+    assert "最低 480 GBP" in res["message"] and res["data"]["offers"]
+    assert client.requests == []
+
+    res = tc.post("/api/search", json={"message": "我想去上海"}).json()
+    assert res["missing"] == ["origin", "depart"] and "出发城市" in res["message"]
+
+
+def test_ai_daily_limit(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from flightsaver.web.app import create_app
+
+    monkeypatch.setenv("FLIGHTSAVER_AI_DAILY_LIMIT", "1")
+    client = FakeClient([([text("ok")], "end_turn")])
+    tc = TestClient(create_app(FlightAgent(client=client, search_fn=lambda *a: {})))
+    first = tc.post("/api/chat", json={"message": "hi"}).text
+    second = tc.post("/api/chat", json={"message": "hi"}).text
+    assert '"done"' in first and "次数已用完" in second
+    assert len(client.requests) == 1
+    assert tc.get("/api/config").json()["ai_remaining"] == 0
+
+
+def test_quick_follow_up_uses_previous_route():
+    from flightsaver.web.quick import quick_search
+
+    seen = []
+
+    def fake(query, budget, engine):
+        seen.append((query.origin, query.destination, query.depart.isoformat()))
+        return {
+            "offers": [],
+            "query": {"currency": "GBP", "round_trip_prices": False},
+            "total_offers_found": 0,
+        }
+
+    first = quick_search("伦敦飞上海", fake)
+    assert first["missing"] == ["depart"] and not seen
+    second = quick_search(f"{FUTURE}", fake, context=first["parsed"])
+    assert seen == [("LON", "SHANGHAI", FUTURE)] and "没有抓到" in second["message"]
+    # A new route replaces the old one.
+    quick_search(f"曼彻斯特飞北京 {FUTURE}", fake, context=second["parsed"])
+    assert seen[-1][:2] == ("MAN", "BEIJING")
