@@ -32,7 +32,7 @@ jobs:
   container-sim:
     # The deployed image under each host's memory limit:
     #   cloudrun: 2 GiB, all providers, two browsers at a time
-    #   render-free: 512 MB, lean browser, one page at a time, no KAYAK (needs more)
+    #   render-free: 512 MB, lean browser, one page at a time, Google + Trip.com only
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -46,7 +46,7 @@ jobs:
             memory: 512m
             env: >-
               -e FLIGHTSAVER_BROWSER_LEAN=1 -e FLIGHTSAVER_BROWSER_CONCURRENCY=1
-              -e FLIGHTSAVER_PROVIDERS=google_flights,trip_com,ctrip
+              -e FLIGHTSAVER_PROVIDERS=google_flights,trip_com
     name: container-sim (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +75,7 @@ jobs:
         run: |
           docker run -d --name fs --memory=512m --memory-swap=512m --shm-size=128m -p 8000:8000 \
             -e FLIGHTSAVER_BROWSER_LEAN=1 -e FLIGHTSAVER_BROWSER_CONCURRENCY=1 \
-            -e FLIGHTSAVER_PROVIDERS=google_flights,trip_com,ctrip \
+            -e FLIGHTSAVER_PROVIDERS=google_flights,trip_com \
             -e FLIGHTSAVER_HISTORY=/tmp/h.sqlite3 flightsaver
           for i in $(seq 1 30); do curl -sf localhost:8000/healthz && break; sleep 1; done
           dep=$(date -d '+45 days' +%F)
@@ -88,5 +88,6 @@ jobs:
           print('sources', d['data']['source_counts'], 'errors', list(d['data']['source_errors']))"
           done
           docker exec fs sh -c 'echo peak_mb=$(( $(cat /sys/fs/cgroup/memory.peak) / 1048576 )); \
-            grep oom_kill /sys/fs/cgroup/memory.events'
+            grep oom_kill /sys/fs/cgroup/memory.events' | tee mem.txt
+          grep -q "oom_kill 0" mem.txt
           curl -sf localhost:8000/healthz

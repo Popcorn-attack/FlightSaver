@@ -39,7 +39,7 @@ KAYAK、Trip.com、携程的结果需要用无头浏览器 Chromium 抓取，至
 | 平台 | 内存 | 可用数据源 | 费用 |
 | --- | --- | --- | --- |
 | **Google Cloud Run**（推荐） | 2 GiB | 全部 4 个 | 每月免费额度约够 6000 次搜索；需绑定信用卡 |
-| Render 免费套餐 | 512 MB | 只有 Google Flights | 免费；闲置 15 分钟后休眠 |
+| Render 免费套餐 | 512 MB | Google Flights + Trip.com（精简浏览器模式；携程、KAYAK 内存不够） | 免费；闲置 15 分钟后休眠 |
 | 自己的电脑或服务器 | 不限 | 全部 4 个 | 免费 |
 
 Hugging Face Spaces 从 2026 年 7 月起不再允许免费账户运行 Docker，所以没有列入。
@@ -56,7 +56,7 @@ Hugging Face Spaces 从 2026 年 7 月起不再允许免费账户运行 Docker�
    ```
 3. 脚本运行结束后会输出网址和访问口令。部署在伦敦区域，内存 2 GiB，最多 1 个实例，闲置时缩到 0 个实例、不计费。
 
-**Render 免费精简版：** 在 [Render Dashboard](https://dashboard.render.com/) 选择 **New → Blueprint**，选这个仓库，填入 `ANTHROPIC_API_KEY`，然后点 **Apply**。部署完成后，到服务的 Environment 页面复制自动生成的 `FLIGHTSAVER_ACCESS_TOKEN`，作为访问口令。精简版只有 Google Flights 的实时价格，但所有平台的购票链接照常提供。
+**Render 免费精简版：** 在 [Render Dashboard](https://dashboard.render.com/) 选择 **New → Blueprint**，选这个仓库，填入 `ANTHROPIC_API_KEY`，然后点 **Apply**。部署完成后，到服务的 Environment 页面复制自动生成的 `FLIGHTSAVER_ACCESS_TOKEN`，作为访问口令。精简版有 Google Flights 和 Trip.com 的实时价格（实测一次约 120 个报价、13 秒），所有平台和航司官网的购票链接照常提供。
 
 ### 其他平台
 
@@ -78,6 +78,8 @@ docker run -p 8000:8000 -e ANTHROPIC_API_KEY=... -e FLIGHTSAVER_ACCESS_TOKEN=自
 | `FLIGHTSAVER_PROVIDERS` | 可选，指定要用的数据源，逗号分隔，默认 `google_flights,kayak,trip_com,ctrip` |
 | `FLIGHTSAVER_BROWSER` | 设为 `0` 时禁用无头浏览器，适合小内存主机 |
 | `FLIGHTSAVER_BROWSER_CONCURRENCY` | 同时打开的浏览器数量，默认 2，每个约占几百 MB 内存 |
+| `FLIGHTSAVER_BROWSER_LEAN` | 设为 `1` 时启用省内存的浏览器模式（512 MB 主机用） |
+| `FLIGHTSAVER_VALUE_OF_TIME` | 综合排序里每小时旅行时间折算多少英镑，默认 15；调高会更偏向快的航班 |
 
 ## 数据来源
 
@@ -100,7 +102,8 @@ KAYAK、Trip.com、携程的接口都需要由页面 JS 生成签名或令牌，
 
 ## 决策引擎
 
-- `rules`（默认）：综合本次搜索的最低价、经停次数、飞行时长，以及历史价格的分位数打分（价格历史存在 `~/.flightsaver/history.sqlite3`）。
+- `rules`（默认）：按"广义成本"排序和打分，计算方法是票价加上时间价值（默认每小时 £15）乘以总时长，总时长包含中转等待。另外这几种情况会加罚：中转超过 6 小时、中转不到 1 小时（有误机风险）、需要换机场、自行转机（分开出票）。中转太紧的行程不会被标为"推荐"。如果积累了价格历史，还会参考当前价格在历史中的分位数（价格历史存在 `~/.flightsaver/history.sqlite3`）。
+- 结果页可以按"综合 / 最便宜 / 最快"排序。每条结果显示总时长、每次中转的机场和等待时间；KAYAK 的结果里如果有航司官网直销的价格，会单独标出"航司官网价"。
 - `jev`（备选）：用 [TypeSafe AI](https://typesafe.ai) 的 Jev 模型，给每个报价判断"买 / 观望 / 跳过"，并按 0–4 分评估性价比。需要先运行 `uv sync --extra jev` 并设置 `TYPESAFE_API_KEY`；条件不满足时自动退回 `rules`。
 
 ```bash

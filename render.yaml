@@ -13,13 +13,13 @@ services:
         generateValue: true # random passphrase; copy it from the service's Environment tab
       - key: TYPESAFE_API_KEY
         sync: false # optional, enables the Jev engine
-      # 512 MB: lean headless Chromium, one page at a time. KAYAK needs more memory.
+      # 512 MB: lean headless Chromium, one page at a time. Ctrip and KAYAK need more memory.
       - key: FLIGHTSAVER_BROWSER_LEAN
         value: "1"
       - key: FLIGHTSAVER_BROWSER_CONCURRENCY
         value: "1"
       - key: FLIGHTSAVER_PROVIDERS
-        value: google_flights,trip_com,ctrip
+        value: google_flights,trip_com
       - key: FLIGHTSAVER_AI_DAILY_LIMIT
         value: "20" # AI chat messages per day; quick mode is unlimited and free. 0 turns AI off
       - key: FLIGHTSAVER_HISTORY
