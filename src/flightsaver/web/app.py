@@ -73,6 +73,10 @@ def create_app(agent: FlightAgent | None = None) -> FastAPI:
     def index() -> FileResponse:
         return FileResponse(STATIC / "index.html")
 
+    @app.get("/healthz")
+    def healthz() -> dict:
+        return {"ok": True}
+
     @app.get("/api/config")
     def config() -> dict:
         return {"token_required": bool(token)}

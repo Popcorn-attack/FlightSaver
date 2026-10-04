@@ -28,7 +28,18 @@ export ANTHROPIC_API_KEY=sk-ant-...
 uv run flightsaver web            # 打开 http://127.0.0.1:8000
 ```
 
-部署到服务器（Render、Fly.io、Railway、云主机等任何能跑 Docker 的地方）：
+### 免费部署到 Render
+
+1. 打开 [Render Dashboard](https://dashboard.render.com/)，用 GitHub 账号登录。
+2. **New → Blueprint**，选择 `Popcorn-attack/FlightSaver` 仓库。Render 会读取 `render.yaml`（免费套餐，Docker 部署）。
+3. 按提示填入 `ANTHROPIC_API_KEY`（`TYPESAFE_API_KEY` 可以不填），然后点 **Apply**。
+4. 部署完成后，在服务的 **Environment** 页面复制自动生成的 `FLIGHTSAVER_ACCESS_TOKEN`。打开 `https://flightsaver-xxxx.onrender.com`，第一次访问时输入这个口令。
+
+免费套餐的限制：服务闲置 15 分钟后会休眠，下次打开需要等大约 1 分钟启动；没有持久磁盘，重新部署后价格历史会被清空。
+
+### 其他平台
+
+部署到 Fly.io、Railway 或云主机等任何能跑 Docker 的地方：
 
 ```bash
 docker build -t flightsaver .

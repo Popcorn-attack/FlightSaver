@@ -1,0 +1,17 @@
+# Render Blueprint: Dashboard -> New -> Blueprint -> pick this repo/branch.
+services:
+  - type: web
+    name: flightsaver
+    runtime: docker
+    plan: free
+    branch: claude/flightsaver-flight-search-fm9vk3
+    healthCheckPath: /healthz
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false # entered in the dashboard when the Blueprint is created
+      - key: FLIGHTSAVER_ACCESS_TOKEN
+        generateValue: true # random passphrase; copy it from the service's Environment tab
+      - key: TYPESAFE_API_KEY
+        sync: false # optional, enables the Jev engine
+      - key: FLIGHTSAVER_HISTORY
+        value: /tmp/history.sqlite3 # free plan has no persistent disk
