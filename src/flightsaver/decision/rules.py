@@ -48,7 +48,8 @@ def generalised_cost(o: FlightOffer, per_hour: float) -> tuple[float, list[str]]
             cost += per_hour * 0.5 * (wait - LONG_LAYOVER) / 60
             notes.append(f"long layover {hm(wait)} at {airport}")
         elif wait < SHORT_LAYOVER:
-            cost += per_hour * 1.0
+            # Risk of missing the connection: priced like three extra hours.
+            cost += per_hour * 3.0
             notes.append(f"tight connection {hm(wait)} at {airport}")
     if o.airport_change:
         cost += per_hour * 2

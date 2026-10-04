@@ -65,6 +65,17 @@
   .badge.buy { color: var(--buy); background: var(--buy-bg); }
   .badge.watch { color: var(--watch); background: var(--watch-bg); }
   .badge.skip { color: var(--skip); background: var(--skip-bg); }
+  .sorts { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 6px; }
+  .sorts button, .more { font: inherit; font-size: 13px; cursor: pointer; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; }
+  .sorts button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .more { display: block; margin: 8px auto 0; }
+  .lay { display: inline-block; font-size: 12px; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 0 6px; margin-left: 2px; }
+  .lay.long { color: var(--watch); border-color: var(--watch); }
+  .lay.tight { color: var(--skip); border-color: var(--skip); }
+  .warn { color: var(--skip); }
+  .direct { font-size: 12px; color: var(--accent); margin-top: 2px; }
   .offer a.book { grid-column: 3; justify-self: end; font-size: 13px; white-space: nowrap; }
   .reasons { grid-column: 2; font-size: 12px; color: var(--muted); }
   a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
@@ -95,7 +106,18 @@
     .offer { grid-template-columns: 78px 1fr; }
     .badge, .offer a.book { grid-column: 2; justify-self: start; }
     .reasons { grid-column: 1 / 3; }
-    .offer a.book { grid-row: auto; }
+    .sorts { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 6px; }
+  .sorts button, .more { font: inherit; font-size: 13px; cursor: pointer; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; }
+  .sorts button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .more { display: block; margin: 8px auto 0; }
+  .lay { display: inline-block; font-size: 12px; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 0 6px; margin-left: 2px; }
+  .lay.long { color: var(--watch); border-color: var(--watch); }
+  .lay.tight { color: var(--skip); border-color: var(--skip); }
+  .warn { color: var(--skip); }
+  .direct { font-size: 12px; color: var(--accent); margin-top: 2px; }
+  .offer a.book { grid-row: auto; }
     .bubble { max-width: 92%; }
   }
 </style>
@@ -209,6 +231,36 @@
       hour: "2-digit", minute: "2-digit"});
   };
 
+  const VERDICT = {buy: "推荐", watch: "观望", skip: "不推荐"};
+  const SORT_LABELS = {best: "综合（价格+总时长）", cheapest: "最便宜", fastest: "最快"};
+  const hm = (min) => `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}`;
+  const PAGE = 10;
+
+  function offerHtml(o) {
+    const lay = (o.layovers || []).map(l => {
+      const warn = l.minutes > 360 ? " long" : l.minutes < 60 ? " tight" : "";
+      return `<span class="lay${warn}">${esc(l.airport)} 停 ${hm(l.minutes)}</span>`;
+    }).join(" ");
+    const flags = [
+      o.airport_change ? "⚠ 需换机场" : "",
+      o.self_transfer ? "⚠ 自行转机（分开出票）" : "",
+    ].filter(Boolean).join(" · ");
+    const orig = o.original_currency
+      ? ` · ${o.original_currency === "CNY" ? "¥" : esc(o.original_currency) + " "}${Math.round(o.original_price)}` : "";
+    const direct = o.direct_price
+      ? `<div class="direct">航司官网 ${Math.round(o.direct_price)} ${esc(o.currency)}（${esc(o.direct_seller || "")}）</div>` : "";
+    return `<div class="offer">
+      <div class="price">${Math.round(o.price)} <small>${esc(o.currency)}${orig}</small></div>
+      <div><div class="airline">${esc(o.airlines.join(", "))}</div>
+        <div class="detail">${esc(o.route.join(" › "))} · ${fmtTime(o.departure)} → ${fmtTime(o.arrival)}</div>
+        <div class="detail"><b>总时长 ${hm(o.total_minutes ?? o.flying_minutes)}</b> · ${o.stops ? o.stops + " 次转机" : "直飞"}
+          · 飞行 ${hm(o.flying_minutes)} ${lay}</div>
+        ${flags ? `<div class="detail warn">${flags}</div>` : ""}${direct}</div>
+      <span class="badge ${esc(o.verdict)}">${VERDICT[o.verdict] || esc(o.verdict)}</span>
+      <a class="book" href="${safeUrl(o.booking_url)}" target="_blank" rel="noopener">${esc(SOURCES[o.source] || o.source)} ›</a>
+    </div>`;
+  }
+
   function renderResults(data) {
     const q = data.query;
     const head = `${esc(q.origin)} → ${esc(q.destination)} · ${esc(q.depart_date)}` +
@@ -218,22 +270,15 @@
       ` · 找到 ${data.total_offers_found} 个` +
       (data.source_counts ? "（" + Object.entries(data.source_counts).map(([k, v]) =>
         `${esc(SOURCES[k] || k)} ${v}`).join(" · ") + "）" : "") + `</span></h3>`;
+    const errs = Object.entries(data.source_errors || {}).map(([k, v]) =>
+      `${SOURCES[k] || k}: ${String(v).split("\n")[0].slice(0, 80)}`);
     if (!data.offers.length) {
-      const errs = Object.entries(data.source_errors || {}).map(([k, v]) => `${k}: ${v.split("\n")[0]}`);
       html += `<div class="empty">暂无实时报价${errs.length ? "（" + esc(errs.join("; ")) + "）" : ""}，可直接在下方平台搜索。</div>`;
-    }
-    for (const o of data.offers) {
-      const h = Math.floor(o.flying_minutes / 60), m = String(o.flying_minutes % 60).padStart(2, "0");
-      html += `<div class="offer">
-        <div class="price">${Math.round(o.price)} <small>${esc(o.currency)}${o.original_currency
-          ? ` · ${o.original_currency === "CNY" ? "¥" : esc(o.original_currency) + " "}${Math.round(o.original_price)}` : ""}</small></div>
-        <div><div class="airline">${esc(o.airlines.join(", "))}</div>
-          <div class="detail">${esc(o.route.join(" › "))} · ${fmtTime(o.departure)} → ${fmtTime(o.arrival)}
-          · ${o.stops ? o.stops + " 次转机" : "直飞"}${o.airport_change ? " · ⚠ 需换机场" : ""} · 飞行 ${h}h${m}</div></div>
-        <span class="badge ${esc(o.verdict)}">${esc(o.verdict)}</span>
-        <div class="reasons">${esc(o.reasons.join(" · "))}</div>
-        <a class="book" href="${safeUrl(o.booking_url)}" target="_blank" rel="noopener">${esc(SOURCES[o.source] || o.source)} ›</a>
-      </div>`;
+    } else {
+      html += `<div class="sorts">` + Object.entries(SORT_LABELS).map(([k, v]) =>
+        `<button data-sort="${k}"${k === (data.sort || "best") ? ' class="on"' : ""}>${v}</button>`).join("") + `</div>
+        <div class="list"></div><button class="more" hidden></button>`;
+      if (errs.length) html += `<div class="empty">部分来源失败：${esc(errs.join("; "))}</div>`;
     }
     const chips = (links) => links.map(l =>
       `<a class="chip${l.prefilled === false ? " plain" : ""}" href="${safeUrl(l.url)}" target="_blank"
@@ -241,7 +286,30 @@
     html += `<div class="links"><span class="label">在平台比价 / 购票</span>${chips(data.platform_links)}
       <span class="label">航司官网</span>${chips(data.airline_links)}</div>`;
     if (data.engine_note) html += `<div class="empty">${esc(data.engine_note)}</div>`;
-    add("results", html);
+    const box = add("results", html);
+    if (!data.offers.length) return;
+
+    // Sorting and paging happen in the page; the server sent up to 30 offers.
+    let shown = PAGE, order = data.offers.slice();
+    const list = box.querySelector(".list"), more = box.querySelector(".more");
+    const draw = () => {
+      list.innerHTML = order.slice(0, shown).map(offerHtml).join("");
+      const left = order.length - shown;
+      more.hidden = left <= 0;
+      more.textContent = `显示更多（还有 ${left} 个）`;
+    };
+    const sorters = {
+      best: (a, b) => (b.score - a.score) || (a.price - b.price),
+      cheapest: (a, b) => (a.price - b.price) || (a.total_minutes - b.total_minutes),
+      fastest: (a, b) => (a.total_minutes - b.total_minutes) || (a.price - b.price),
+    };
+    box.querySelectorAll(".sorts button").forEach(btn => btn.onclick = () => {
+      box.querySelectorAll(".sorts button").forEach(x => x.classList.toggle("on", x === btn));
+      order = data.offers.slice().sort(sorters[btn.dataset.sort]);
+      shown = PAGE; draw();
+    });
+    more.onclick = () => { shown += PAGE; draw(); };
+    draw();
   }
 
   function ask(text, useAi = false) {

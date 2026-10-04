@@ -170,3 +170,13 @@ def test_providers_with_recorded_capture_merge_in_gbp():
     assert converted and all(o.original_price > o.price for o in converted)
     prices = [o.price for o in result.offers]
     assert prices == sorted(prices)
+
+
+def test_kayak_airline_direct_fares_and_self_transfer():
+    offers = kayak.parse(bodies("kayak_ow"), OW, "")
+    direct = [o for o in offers if o.direct_price]
+    assert direct, "KAYAK lists airline websites among booking options"
+    for o in direct:
+        assert o.direct_price >= o.price and o.direct_seller
+    assert any(o.self_transfer for o in offers)
+    assert all(o.total_minutes >= o.flying_minutes for o in offers)

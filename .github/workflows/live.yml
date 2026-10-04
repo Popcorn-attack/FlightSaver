@@ -32,7 +32,7 @@ jobs:
   container-sim:
     # The deployed image under each host's memory limit:
     #   cloudrun: 2 GiB, all providers, two browsers at a time
-    #   render-free: 512 MB, browser disabled -> Google Flights over HTTP only
+    #   render-free: 512 MB, lean browser, one page at a time, no KAYAK (needs more)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -44,7 +44,9 @@ jobs:
             env: -e FLIGHTSAVER_BROWSER_CONCURRENCY=2
           - name: render-free
             memory: 512m
-            env: -e FLIGHTSAVER_BROWSER=0
+            env: >-
+              -e FLIGHTSAVER_BROWSER_LEAN=1 -e FLIGHTSAVER_BROWSER_CONCURRENCY=1
+              -e FLIGHTSAVER_PROVIDERS=google_flights,trip_com,ctrip
     name: container-sim (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
@@ -61,3 +63,30 @@ jobs:
               exit \$code" 2>&1 | tee out.txt
           ! grep -q "Page crashed" out.txt
           grep -q "oom_kill 0" out.txt
+
+  render-web:
+    # The Render free configuration end to end: web server + quick search in 512 MB.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t flightsaver .
+      - name: Quick search through the web API
+        run: |
+          docker run -d --name fs --memory=512m --memory-swap=512m --shm-size=128m -p 8000:8000 \
+            -e FLIGHTSAVER_BROWSER_LEAN=1 -e FLIGHTSAVER_BROWSER_CONCURRENCY=1 \
+            -e FLIGHTSAVER_PROVIDERS=google_flights,trip_com,ctrip \
+            -e FLIGHTSAVER_HISTORY=/tmp/h.sqlite3 flightsaver
+          for i in $(seq 1 30); do curl -sf localhost:8000/healthz && break; sleep 1; done
+          dep=$(date -d '+45 days' +%F)
+          for q in "伦敦飞上海 $dep" "曼彻斯特到北京 $dep 往返 两周"; do
+            start=$(date +%s)
+            curl -s -X POST localhost:8000/api/search -H 'Content-Type: application/json' \
+              -d "{\"message\": \"$q\"}" > out.json
+            echo "== $q ($(( $(date +%s) - start ))s)"
+            python3 -c "import json; d=json.load(open('out.json')); print(d['message']); \
+          print('sources', d['data']['source_counts'], 'errors', list(d['data']['source_errors']))"
+          done
+          docker exec fs sh -c 'echo peak_mb=$(( $(cat /sys/fs/cgroup/memory.peak) / 1048576 )); \
+            grep oom_kill /sys/fs/cgroup/memory.events'
+          curl -sf localhost:8000/healthz

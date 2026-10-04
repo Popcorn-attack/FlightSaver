@@ -256,7 +256,7 @@ def test_quick_search_endpoint_needs_no_ai(monkeypatch):
     tc = TestClient(web_app.create_app(FlightAgent(client=client, search_fn=fake_search)))
     res = tc.post("/api/search", json={"message": f"伦敦飞上海 {FUTURE} 预算500镑"}).json()
     assert calls == [("LON", "SHANGHAI", FUTURE, 500.0)]
-    assert "最低 480 GBP" in res["message"] and res["data"]["offers"]
+    assert "综合推荐：480 GBP" in res["message"] and res["data"]["offers"]
     assert client.requests == []
 
     res = tc.post("/api/search", json={"message": "我想去上海"}).json()

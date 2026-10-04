@@ -68,30 +68,41 @@ def summarise(data: dict, zh: bool) -> str:
             if zh
             else "No live fares right now; use the platform links below."
         )
-    best = offers[0]
-    direct = next((o for o in offers if o["stops"] == 0), None)
-    rt = "（往返总价）" if zh and data["query"]["round_trip_prices"] else ""
-    rt_en = " (round-trip total)" if data["query"]["round_trip_prices"] else ""
+    best = max(offers, key=lambda o: o.get("score", 0))
+    cheapest = min(offers, key=lambda o: o["price"])
+    fastest = min(offers, key=lambda o: o.get("total_minutes") or o["flying_minutes"])
+    rt = ""
+    if data["query"]["round_trip_prices"]:
+        rt = "（往返总价）" if zh else " (round-trip total)"
+
+    def line(o: dict) -> str:
+        total = _hm(o.get("total_minutes") or o["flying_minutes"])
+        names = ("、" if zh else ", ").join(o["airlines"])
+        if zh:
+            stops = "直飞" if o["stops"] == 0 else f"转 {o['stops']} 次"
+            wait = sum(x["minutes"] for x in o.get("layovers", []))
+            extra = f"，其中中转 {_hm(wait)}" if wait else ""
+            return f"{o['price']:.0f} {cur}，{names}，{stops}，总时长 {total}{extra}"
+        stops = "direct" if o["stops"] == 0 else f"{o['stops']} stop(s)"
+        return f"{o['price']:.0f} {cur}, {names}, {stops}, {total} door to door"
+
     if zh:
-        stops = "直飞" if best["stops"] == 0 else f"转机 {best['stops']} 次"
-        text = (
-            f"找到 {data['total_offers_found']} 个报价。最低 {best['price']:.0f} {cur}{rt}："
-            f"{'、'.join(best['airlines'])}，{stops}。"
-        )
-        if direct and direct is not best:
-            text += f"直飞最低 {direct['price']:.0f} {cur}（{'、'.join(direct['airlines'])}）。"
-        buys = [o for o in offers if o["verdict"] == "buy"]
-        if buys:
-            text += f"有 {len(buys)} 个报价被标为「值得买」。"
+        text = f"找到 {data['total_offers_found']} 个报价{rt}。\n- 综合推荐：{line(best)}"
+        if cheapest is not best:
+            text += f"\n- 最便宜：{line(cheapest)}"
+        if fastest is not best and fastest is not cheapest:
+            text += f"\n- 最快：{line(fastest)}"
         return text
-    stops = "direct" if best["stops"] == 0 else f"{best['stops']} stop(s)"
-    text = (
-        f"Found {data['total_offers_found']} fares. Cheapest {best['price']:.0f} {cur}{rt_en}: "
-        f"{', '.join(best['airlines'])}, {stops}."
-    )
-    if direct and direct is not best:
-        text += f" Cheapest direct {direct['price']:.0f} {cur} ({', '.join(direct['airlines'])})."
+    text = f"Found {data['total_offers_found']} fares{rt}.\n- Best overall: {line(best)}"
+    if cheapest is not best:
+        text += f"\n- Cheapest: {line(cheapest)}"
+    if fastest is not best and fastest is not cheapest:
+        text += f"\n- Fastest: {line(fastest)}"
     return text
+
+
+def _hm(minutes: int) -> str:
+    return f"{minutes // 60}h{minutes % 60:02d}"
 
 
 def merge_context(parsed: nlp.ParsedRequest, context: dict | None) -> None:

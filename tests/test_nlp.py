@@ -68,3 +68,9 @@ def test_english_words_need_boundaries():
     # "Bristolian" is not Bristol; IATA codes only count when known.
     r = parse("ABC Bristolian to Shanghai 1 Dec", TODAY)
     assert r.origin is None and r.destination == "SHANGHAI"
+
+
+def test_sort_preference():
+    assert parse("伦敦飞上海 12月1日 最便宜的", TODAY).sort == "cheapest"
+    assert parse("fastest London to Beijing 1 Dec", TODAY).sort == "fastest"
+    assert parse("伦敦飞上海 12月1日", TODAY).sort == "best"
