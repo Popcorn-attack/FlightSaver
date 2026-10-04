@@ -12,6 +12,11 @@ dependencies = [
 [project.optional-dependencies]
 # Jev (TypeSafe AI) as an optional decision engine; resolved from vendor/ via uv.
 jev = ["typesafe-sdk"]
+web = [
+    "anthropic>=1",
+    "fastapi>=0.142.2",
+    "uvicorn[standard]>=0.54.0",
+]
 
 [project.scripts]
 flightsaver = "flightsaver.cli:main"

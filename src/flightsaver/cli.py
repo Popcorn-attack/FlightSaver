@@ -117,6 +117,16 @@ def cmd_airports(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_web(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn
+    except ImportError:
+        print("error: web extra not installed (uv sync --extra web)", file=sys.stderr)
+        return 2
+    uvicorn.run("flightsaver.web.app:app", host=args.host, port=args.port)
+    return 0
+
+
 def _add_trip_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("origin", help="IATA airport or metro code, e.g. LHR, LON, SHANGHAI")
     p.add_argument("destination")
@@ -159,6 +169,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     ap = sub.add_parser("airports", help="list supported airports")
     ap.set_defaults(func=cmd_airports)
+
+    web = sub.add_parser("web", help="start the chat website (needs ANTHROPIC_API_KEY)")
+    web.add_argument("--host", default="127.0.0.1")
+    web.add_argument("--port", type=int, default=8000)
+    web.set_defaults(func=cmd_web)
     return parser
 
 

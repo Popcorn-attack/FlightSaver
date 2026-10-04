@@ -10,6 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --extra jev
+      - run: uv sync --all-extras
       - run: uv run ruff check src tests
       - run: uv run pytest -q

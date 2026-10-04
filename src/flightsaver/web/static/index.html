@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlightSaver</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%E2%9C%88%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #667085; --line: #e4e7ec;
+    --accent: #1f6feb; --accent-soft: #e8f0fe; --user: #1f6feb; --user-text: #fff;
+    --buy: #157f3d; --buy-bg: #e3f6ea; --watch: #9a6700; --watch-bg: #fff4d6;
+    --skip: #b42318; --skip-bg: #fde8e7; --shadow: 0 1px 2px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --panel: #171b21; --text: #e6e8eb; --muted: #98a2b3; --line: #2a3038;
+      --accent: #58a6ff; --accent-soft: #1b2a3d; --user: #2563eb; --user-text: #fff;
+      --buy: #4ade80; --buy-bg: #12301f; --watch: #fbbf24; --watch-bg: #33290f;
+      --skip: #f87171; --skip-bg: #3a1716; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Microsoft YaHei", sans-serif; display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+    border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: .2px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header .spacer { flex: 1; }
+  header select, header button { font: inherit; font-size: 13px; color: var(--text);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+  header button { cursor: pointer; }
+  main { flex: 1; overflow-y: auto; }
+  .thread { max-width: 860px; margin: 0 auto; padding: 20px 16px 8px; }
+  .msg { margin: 0 0 14px; display: flex; }
+  .msg.user { justify-content: flex-end; }
+  .bubble { max-width: 85%; padding: 10px 14px; border-radius: 14px; background: var(--panel);
+    border: 1px solid var(--line); box-shadow: var(--shadow); overflow-wrap: anywhere; }
+  .msg.user .bubble { background: var(--user); color: var(--user-text); border-color: transparent; }
+  .bubble p { margin: 0 0 8px; } .bubble p:last-child { margin: 0; }
+  .bubble ul, .bubble ol { margin: 4px 0 8px; padding-left: 20px; }
+  .status { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+  .status::before { content: "⟳ "; }
+  .error { color: var(--skip); background: var(--skip-bg); border-radius: 10px; padding: 8px 12px;
+    margin: 0 0 14px; font-size: 14px; }
+  .results { margin: 0 0 16px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px; box-shadow: var(--shadow); }
+  .results h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+  .results .meta { color: var(--muted); font-size: 12px; font-weight: 400; }
+  .offer { display: grid; grid-template-columns: 92px 1fr auto; gap: 4px 12px; align-items: center;
+    padding: 10px 4px; border-top: 1px solid var(--line); }
+  .price { font-size: 18px; font-weight: 650; }
+  .price small { font-size: 11px; color: var(--muted); font-weight: 400; display: block; }
+  .airline { font-weight: 600; }
+  .detail { color: var(--muted); font-size: 13px; }
+  .badge { font-size: 12px; font-weight: 650; border-radius: 999px; padding: 2px 10px;
+    text-transform: uppercase; justify-self: end; }
+  .badge.buy { color: var(--buy); background: var(--buy-bg); }
+  .badge.watch { color: var(--watch); background: var(--watch-bg); }
+  .badge.skip { color: var(--skip); background: var(--skip-bg); }
+  .offer a.book { grid-column: 3; justify-self: end; font-size: 13px; white-space: nowrap; }
+  .reasons { grid-column: 2; font-size: 12px; color: var(--muted); }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  .links { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .links .label { width: 100%; font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .chip { font-size: 13px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+    background: var(--bg); }
+  .chip.plain { opacity: .75; }
+  .empty { color: var(--muted); font-size: 13px; padding: 6px 4px; }
+  .welcome { text-align: center; color: var(--muted); padding: 40px 0 20px; }
+  .welcome h2 { color: var(--text); font-size: 22px; margin: 0 0 6px; }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+  .examples button { font: inherit; font-size: 14px; cursor: pointer; color: var(--text);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; }
+  .examples button:hover { border-color: var(--accent); }
+  footer { border-top: 1px solid var(--line); background: var(--panel); padding: 12px 16px; }
+  form { max-width: 860px; margin: 0 auto; display: flex; gap: 8px; }
+  textarea { flex: 1; resize: none; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 46px;
+    max-height: 160px; }
+  textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  form button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 0 18px;
+    background: var(--accent); color: #fff; cursor: pointer; }
+  form button:disabled { opacity: .5; cursor: default; }
+  .note { max-width: 860px; margin: 6px auto 0; font-size: 12px; color: var(--muted); }
+  @media (max-width: 600px) {
+    header .sub { display: none; }
+    .offer { grid-template-columns: 78px 1fr; }
+    .badge, .offer a.book { grid-column: 2; justify-self: start; }
+    .reasons { grid-column: 1 / 3; }
+    .offer a.book { grid-row: auto; }
+    .bubble { max-width: 92%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>✈ FlightSaver</h1>
+  <span class="sub">英国 ⇄ 中国 机票搜索</span>
+  <span class="spacer"></span>
+  <select id="engine" title="决策引擎">
+    <option value="rules">规则引擎</option>
+    <option value="jev">Jev（备选）</option>
+  </select>
+  <button id="reset" type="button">新对话</button>
+</header>
+<main id="scroll">
+  <div class="thread" id="thread">
+    <div class="welcome" id="welcome">
+      <h2>想去哪儿？</h2>
+      <div>用一句话描述行程，我会搜实时价格，并给出各平台和航司官网的购票链接。</div>
+      <div class="examples">
+        <button>12月20日从伦敦飞上海，1月5日回来，经济舱</button>
+        <button>曼彻斯特到北京，圣诞节前后最便宜的单程</button>
+        <button>Business class London to Guangzhou mid-January, direct only</button>
+        <button>春节前从爱丁堡回成都，预算600镑以内</button>
+      </div>
+    </div>
+  </div>
+</main>
+<footer>
+  <form id="form">
+    <textarea id="input" rows="1" placeholder="例如：下周五伦敦飞上海，最多转一次" autofocus></textarea>
+    <button id="send" type="submit">发送</button>
+  </form>
+  <div class="note">只提供搜索结果和购票链接，不代为下单。价格以平台页面为准。</div>
+</footer>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const thread = $("thread"), scroll = $("scroll"), input = $("input"), send = $("send");
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
+  };
+  let sessionId = null, busy = false, token = store.get("fs_token") || "";
+  const savedEngine = store.get("fs_engine"); if (savedEngine) $("engine").value = savedEngine;
+  $("engine").onchange = (e) => store.set("fs_engine", e.target.value);
+
+  fetch("/api/config").then(r => r.json()).then(cfg => {
+    if (cfg.token_required && !token) {
+      token = prompt("访问口令 / Access token") || "";
+      store.set("fs_token", token);
+    }
+  }).catch(() => {});
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, c =>
+    ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const safeUrl = (u) => /^https?:\/\//i.test(u) ? esc(u) : "#";
+
+  // Minimal markdown: paragraphs, bullet/numbered lists, **bold**, `code`, [text](url).
+  function md(src) {
+    const inline = (t) => esc(t)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+        (_, a, u) => `<a href="${u}" target="_blank" rel="noopener">${a}</a>`);
+    const out = []; let list = null;
+    for (const line of src.split("\n")) {
+      const m = line.match(/^\s*(?:[-*•]|(\d+)\.)\s+(.*)$/);
+      if (m) {
+        const tag = m[1] ? "ol" : "ul";
+        if (!list || list.tag !== tag) { if (list) out.push(`</${list.tag}>`); out.push(`<${tag}>`); list = {tag}; }
+        out.push(`<li>${inline(m[2])}</li>`);
+      } else {
+        if (list) { out.push(`</${list.tag}>`); list = null; }
+        if (line.trim()) out.push(`<p>${inline(line.replace(/^#+\s*/, ""))}</p>`);
+      }
+    }
+    if (list) out.push(`</${list.tag}>`);
+    return out.join("");
+  }
+
+  function add(cls, html) {
+    const div = document.createElement("div");
+    div.className = cls; div.innerHTML = html;
+    thread.appendChild(div);
+    scroll.scrollTop = scroll.scrollHeight;
+    return div;
+  }
+
+  const fmtTime = (iso) => {
+    const d = new Date(iso);
+    return isNaN(d) ? iso : d.toLocaleString("zh-CN", {month: "numeric", day: "numeric",
+      hour: "2-digit", minute: "2-digit"});
+  };
+
+  function renderResults(data) {
+    const q = data.query;
+    const head = `${esc(q.origin)} → ${esc(q.destination)} · ${esc(q.depart_date)}` +
+      (q.return_date ? ` / ${esc(q.return_date)}` : "");
+    let html = `<h3>${head} <span class="meta">· ${esc(q.cabin)} · ${q.adults} 人` +
+      (q.round_trip_prices ? " · 往返总价" : "") +
+      ` · 找到 ${data.total_offers_found} 个</span></h3>`;
+    if (!data.offers.length) {
+      const errs = Object.entries(data.source_errors || {}).map(([k, v]) => `${k}: ${v.split("\n")[0]}`);
+      html += `<div class="empty">暂无实时报价${errs.length ? "（" + esc(errs.join("; ")) + "）" : ""}，可直接在下方平台搜索。</div>`;
+    }
+    for (const o of data.offers) {
+      const h = Math.floor(o.flying_minutes / 60), m = String(o.flying_minutes % 60).padStart(2, "0");
+      html += `<div class="offer">
+        <div class="price">${Math.round(o.price)} <small>${esc(o.currency)}</small></div>
+        <div><div class="airline">${esc(o.airlines.join(", "))}</div>
+          <div class="detail">${esc(o.route.join(" › "))} · ${fmtTime(o.departure)} → ${fmtTime(o.arrival)}
+          · ${o.stops ? o.stops + " 次转机" : "直飞"} · 飞行 ${h}h${m}</div></div>
+        <span class="badge ${esc(o.verdict)}">${esc(o.verdict)}</span>
+        <div class="reasons">${esc(o.reasons.join(" · "))}</div>
+        <a class="book" href="${safeUrl(o.booking_url)}" target="_blank" rel="noopener">查看 ›</a>
+      </div>`;
+    }
+    const chips = (links) => links.map(l =>
+      `<a class="chip${l.prefilled === false ? " plain" : ""}" href="${safeUrl(l.url)}" target="_blank"
+          rel="noopener" title="${l.prefilled === false ? "需在页面中填写行程" : "已带入行程"}">${esc(l.name)}</a>`).join("");
+    html += `<div class="links"><span class="label">在平台比价 / 购票</span>${chips(data.platform_links)}
+      <span class="label">航司官网</span>${chips(data.airline_links)}</div>`;
+    if (data.engine_note) html += `<div class="empty">${esc(data.engine_note)}</div>`;
+    add("results", html);
+  }
+
+  async function ask(text) {
+    if (busy || !text.trim()) return;
+    busy = true; send.disabled = true;
+    $("welcome")?.remove();
+    add("msg user", `<div class="bubble">${esc(text)}</div>`);
+    let bubble = null, buf = "", status = null;
+    const ensureBubble = () => {
+      if (!bubble) { bubble = add("msg", `<div class="bubble"></div>`).firstChild; buf = ""; }
+      return bubble;
+    };
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", ...(token ? {"X-Access-Token": token} : {})},
+        body: JSON.stringify({message: text, session_id: sessionId, engine: $("engine").value}),
+      });
+      if (res.status === 401) { store.del("fs_token"); throw new Error("访问口令错误，请刷新页面重新输入"); }
+      if (!res.ok) throw new Error(`服务器错误 ${res.status}`);
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let pending = "";
+      for (;;) {
+        const {value, done} = await reader.read();
+        if (done) break;
+        pending += dec.decode(value, {stream: true});
+        let i;
+        while ((i = pending.indexOf("\n\n")) >= 0) {
+          const chunk = pending.slice(0, i); pending = pending.slice(i + 2);
+          if (!chunk.startsWith("data: ")) continue;
+          const ev = JSON.parse(chunk.slice(6));
+          if (ev.type === "session") sessionId = ev.session_id;
+          else if (ev.type === "text") {
+            status?.remove(); status = null;
+            const b = ensureBubble(); buf += ev.text; b.innerHTML = md(buf);
+            scroll.scrollTop = scroll.scrollHeight;
+          } else if (ev.type === "status") {
+            bubble = null; status?.remove(); status = add("status", esc(ev.text));
+          } else if (ev.type === "results") {
+            status?.remove(); status = null; bubble = null; renderResults(ev.data);
+          } else if (ev.type === "error") {
+            status?.remove(); status = null; add("error", esc(ev.text));
+          }
+        }
+      }
+    } catch (e) {
+      add("error", esc(e.message || e));
+    } finally {
+      status?.remove();
+      busy = false; send.disabled = false; input.focus();
+    }
+  }
+
+  $("form").onsubmit = (e) => { e.preventDefault(); const t = input.value; input.value = ""; autosize(); ask(t); };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("form").requestSubmit(); }
+  });
+  const autosize = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 160) + "px"; };
+  input.addEventListener("input", autosize);
+  document.querySelectorAll(".examples button").forEach(b => b.onclick = () => ask(b.textContent));
+  $("reset").onclick = () => {
+    if (sessionId) fetch("/api/reset", {method: "POST", headers: {"Content-Type": "application/json",
+      ...(token ? {"X-Access-Token": token} : {})}, body: JSON.stringify({session_id: sessionId})});
+    location.reload();
+  };
+})();
+</script>
+</body>
+</html>

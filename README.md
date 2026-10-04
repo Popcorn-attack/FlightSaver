@@ -18,6 +18,31 @@ uv run flightsaver airports                       # 支持的机场和城市代�
 
 也可以在 GitHub 上运行：**Actions → Flight search → Run workflow**。
 
+## 对话网页
+
+用自然语言对话搜索，比如"12月20号伦敦飞上海，1月5号回来"或"春节前从爱丁堡回成都，预算600镑以内"。由 Claude 理解你的需求，调用 FlightSaver 搜索，再把结果整理成航班卡片和购票链接。
+
+```bash
+uv sync --extra web --extra jev
+export ANTHROPIC_API_KEY=sk-ant-...
+uv run flightsaver web            # 打开 http://127.0.0.1:8000
+```
+
+部署到服务器（Render、Fly.io、Railway、云主机等任何能跑 Docker 的地方）：
+
+```bash
+docker build -t flightsaver .
+docker run -p 8000:8000 -e ANTHROPIC_API_KEY=... -e FLIGHTSAVER_ACCESS_TOKEN=自定义口令 \
+  -v flightsaver-data:/data flightsaver
+```
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | 必填，Claude API key |
+| `FLIGHTSAVER_ACCESS_TOKEN` | 公开部署时建议设置；设置后打开网页需要输入这个口令，防止别人消耗你的 API 额度 |
+| `TYPESAFE_API_KEY` | 可选，启用 Jev 决策引擎 |
+| `FLIGHTSAVER_MODEL` | 可选，默认 `claude-opus-5-5` |
+
 ## 数据来源
 
 | 类型 | 平台 | 实时报价 | 购票链接 |
@@ -53,13 +78,14 @@ src/flightsaver/
   history.py           SQLite 价格历史
   decision/            rules.py（默认）、jev.py（备选）
   cli.py               命令行入口
+  web/                 对话网页：agent.py（Claude 工具调用循环）、app.py（FastAPI）、static/index.html
 vendor/typesafe-sdk-python/   TypeSafe SDK 的项目内 fork（MIT），见 UPSTREAM.md
 ```
 
 ## 开发
 
 ```bash
-uv sync --extra jev
+uv sync --all-extras
 uv run pytest
 uv run ruff check src tests
 ```
