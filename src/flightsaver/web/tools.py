@@ -12,7 +12,8 @@ from flightsaver.models import SearchQuery
 from flightsaver.providers import Provider, default_providers
 from flightsaver.search import search
 
-MAX_OFFERS = 8
+MAX_OFFERS = 30  # sent to the page; it shows 10 and expands
+SORTS = ("best", "cheapest", "fastest")
 CABINS = ["economy", "premium-economy", "business", "first"]
 
 SEARCH_TOOL = {
@@ -42,6 +43,11 @@ SEARCH_TOOL = {
             "currency": {"type": "string", "description": "ISO code, default GBP"},
             "max_stops": {"type": "integer", "minimum": 0, "maximum": 3},
             "budget": {"type": "number", "description": "User's price ceiling, same currency"},
+            "sort": {
+                "type": "string",
+                "enum": list(SORTS),
+                "description": "best = price and door-to-door time incl. layovers (default)",
+            },
         },
         "required": ["origin", "destination", "depart_date"],
     },
@@ -82,16 +88,27 @@ def run_search(
     engine: str = "rules",
     providers: list[Provider] | None = None,
     history: PriceHistory | None = None,
+    sort: str = "best",
 ) -> dict:
-    """Search, judge and return a JSON-able summary for both Claude and the web page."""
+    """Search, judge and return a JSON-able summary for both Claude and the web page.
+
+    ``sort``: "best" (fare + journey time incl. layovers), "cheapest" or "fastest".
+    """
     result = search(query, providers if providers is not None else default_providers())
     past = history.cheapest_per_run(query) if history else []
     verdicts, note = evaluate(engine, result.offers, DecisionContext(past, budget))
     if history and result.offers:
         history.record(query, result.offers)
 
+    pairs = list(zip(result.offers, verdicts, strict=True))
+    if sort == "cheapest":
+        pairs.sort(key=lambda p: (p[0].price, p[0].total_minutes))
+    elif sort == "fastest":
+        pairs.sort(key=lambda p: (p[0].total_minutes, p[0].price))
+    else:
+        pairs.sort(key=lambda p: (-p[1].score, p[0].price))
     offers = []
-    for o, v in list(zip(result.offers, verdicts, strict=True))[:MAX_OFFERS]:
+    for o, v in pairs[:MAX_OFFERS]:
         offers.append(
             {
                 "price": o.price,
@@ -102,6 +119,8 @@ def run_search(
                 "arrival": o.arrival.isoformat(timespec="minutes"),
                 "stops": o.stops,
                 "flying_minutes": o.flying_minutes,
+                "total_minutes": o.total_minutes,
+                "layovers": [{"airport": a, "minutes": m} for a, m in o.layovers],
                 "verdict": v.action,
                 "score": v.score,
                 "reasons": v.reasons,
@@ -110,6 +129,9 @@ def run_search(
                 "original_price": o.original_price,
                 "original_currency": o.original_currency,
                 "airport_change": o.airport_change,
+                "self_transfer": o.self_transfer,
+                "direct_price": o.direct_price,
+                "direct_seller": o.direct_seller,
             }
         )
     return {
@@ -123,6 +145,7 @@ def run_search(
             "currency": query.currency,
             "round_trip_prices": query.round_trip,
         },
+        "sort": sort,
         "offers": offers,
         "total_offers_found": len(result.offers),
         "platform_links": [
@@ -148,6 +171,9 @@ def compact_for_model(data: dict, limit: int = 5) -> dict:
                 "departure": o.get("departure"),
                 "arrival": o.get("arrival"),
                 "stops": o.get("stops"),
+                "total_minutes": o.get("total_minutes"),
+                "layovers": [f"{x['airport']} {x['minutes']}m" for x in o.get("layovers", [])],
+                **({"airline_direct": o["direct_price"]} if o.get("direct_price") else {}),
                 "verdict": o.get("verdict"),
                 **({"airport_change": True} if o.get("airport_change") else {}),
             }

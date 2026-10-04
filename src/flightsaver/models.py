@@ -65,6 +65,11 @@ class FlightOffer:
     # Set when the source quoted another currency and price was converted.
     original_price: float | None = None
     original_currency: str | None = None
+    # Cheapest fare sold by an airline itself (from KAYAK's booking options).
+    direct_price: float | None = None
+    direct_seller: str | None = None
+    # Separate tickets the traveller must connect themselves (no missed-connection cover).
+    self_transfer: bool = False
 
     @property
     def stops(self) -> int:
@@ -73,6 +78,28 @@ class FlightOffer:
     @property
     def flying_minutes(self) -> int:
         return sum(leg.duration_minutes for leg in self.legs)
+
+    @property
+    def layovers(self) -> list[tuple[str, int]]:
+        """(connection airport, minutes waited) for each stop.
+
+        Both times are local to the connecting city, so the difference is exact
+        even though the journey crosses time zones.
+        """
+        out = []
+        for a, b in zip(self.legs, self.legs[1:], strict=False):
+            minutes = int((b.departure - a.arrival).total_seconds() // 60)
+            out.append((a.to_airport, max(minutes, 0)))
+        return out
+
+    @property
+    def layover_minutes(self) -> int:
+        return sum(m for _, m in self.layovers)
+
+    @property
+    def total_minutes(self) -> int:
+        """Door-to-door journey time: flying plus waiting at connections."""
+        return self.flying_minutes + self.layover_minutes
 
     @property
     def airport_change(self) -> bool:

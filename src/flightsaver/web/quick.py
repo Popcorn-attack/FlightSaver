@@ -150,7 +150,7 @@ def quick_search(
             "message": str(exc),
             "parsed": _plain(parsed, zh),
         }
-    data = search_fn(query, budget, engine)
+    data = search_fn(query, budget, engine, parsed.sort)
     message = summarise(data, zh)
     if parsed.notes:
         message += (

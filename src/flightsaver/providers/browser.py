@@ -24,6 +24,56 @@ USER_AGENT = (
 _slots = threading.BoundedSemaphore(int(os.environ.get("FLIGHTSAVER_BROWSER_CONCURRENCY", "2")))
 
 
+SKIP_TYPES = ("image", "media", "font")
+LEAN_SKIP_TYPES = (*SKIP_TYPES, "stylesheet", "manifest", "texttrack", "other")
+# Analytics/ads that cost memory and never carry results.
+TRACKERS = (
+    "googletagmanager",
+    "google-analytics",
+    "doubleclick",
+    "googlesyndication",
+    "facebook",
+    "hotjar",
+    "clarity.ms",
+    "criteo",
+    "bing.com",
+    "tiktok",
+    "snapchat",
+    "pinterest",
+    "adservice",
+    "optimizely",
+    "newrelic",
+    "nr-data",
+    "sentry",
+    "datadoghq",
+    "cookielaw",
+    "onetrust",
+    "quantserve",
+    "taboola",
+    "outbrain",
+)
+
+
+def _lean() -> bool:
+    """Low-memory mode for small hosts (FLIGHTSAVER_BROWSER_LEAN=1, e.g. 512 MB)."""
+    return os.environ.get("FLIGHTSAVER_BROWSER_LEAN", "0") == "1"
+
+
+def _launch_args() -> list[str]:
+    args = ["--disable-dev-shm-usage", "--no-zygote", "--disable-gpu"]
+    if _lean():
+        args += [
+            "--renderer-process-limit=1",
+            "--disable-site-isolation-trials",
+            "--disable-features=site-per-process,IsolateOrigins,Translate,MediaRouter",
+            "--disable-extensions",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--js-flags=--max-old-space-size=256",
+        ]
+    return args
+
+
 @dataclass
 class Captured:
     url: str
@@ -93,9 +143,7 @@ def capture_json(
 
     captured: list[Captured] = []
     with _slots, sync_playwright() as pw:
-        browser = pw.chromium.launch(
-            headless=True, args=["--disable-dev-shm-usage", "--no-zygote", "--disable-gpu"]
-        )
+        browser = pw.chromium.launch(headless=True, args=_launch_args())
         try:
             ctx = browser.new_context(
                 locale=locale,
@@ -103,12 +151,14 @@ def capture_json(
                 user_agent=USER_AGENT,
                 viewport={"width": 1366, "height": 900},
             )
-            # Results come from XHR JSON; skip heavy assets.
+            # Results come from XHR JSON; skip heavy assets (and more in lean mode).
+            skip_types = LEAN_SKIP_TYPES if _lean() else SKIP_TYPES
             ctx.route(
                 "**/*",
                 lambda route: (
                     route.abort()
-                    if route.request.resource_type in ("image", "media", "font")
+                    if route.request.resource_type in skip_types
+                    or (_lean() and any(t in route.request.url for t in TRACKERS))
                     else route.continue_()
                 ),
             )

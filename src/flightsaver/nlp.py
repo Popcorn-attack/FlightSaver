@@ -155,6 +155,7 @@ class ParsedRequest:
     currency: str = "GBP"
     max_stops: int | None = None
     budget: float | None = None
+    sort: str = "best"  # best | cheapest | fastest
     wants_round_trip: bool = False
     notes: list[str] = field(default_factory=list)
 
@@ -187,6 +188,7 @@ class ParsedRequest:
             args["max_stops"] = self.max_stops
         if self.budget is not None:
             args["budget"] = self.budget
+        args["sort"] = self.sort
         return args
 
 
@@ -403,4 +405,8 @@ def parse(text: str, today: date | None = None) -> ParsedRequest:
     )
     if m:
         req.budget = float(m.group(1))
+    if re.search(r"最快|最短|时间最少|fastest|quickest|shortest", low):
+        req.sort = "fastest"
+    elif re.search(r"最便宜|最低价|最省钱|cheapest|lowest price", low):
+        req.sort = "cheapest"
     return req

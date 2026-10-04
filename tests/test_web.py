@@ -97,7 +97,7 @@ def test_run_search_shape():
 def test_agent_tool_loop():
     calls = []
 
-    def search_fn(query, budget, engine):
+    def search_fn(query, budget, engine, sort="best"):
         calls.append((query.origin, query.destination, budget, engine))
         return {"query": {}, "offers": [{"price": 512}], "platform_links": []}
 
@@ -240,7 +240,7 @@ def test_quick_search_endpoint_needs_no_ai(monkeypatch):
 
     calls = []
 
-    def fake_search(query, budget, engine):
+    def fake_search(query, budget, engine, sort="best"):
         calls.append((query.origin, query.destination, query.depart.isoformat(), budget))
 
         class P:
@@ -249,7 +249,7 @@ def test_quick_search_endpoint_needs_no_ai(monkeypatch):
             def search(self, q):
                 return [make_offer(480), make_offer(620, stops=1, dep_hour=7)]
 
-        return run_search(query, budget, engine, providers=[P()])
+        return run_search(query, budget, engine, providers=[P()], sort=sort)
 
     monkeypatch.setattr(web_app, "_search_with_history", fake_search)
     client = FakeClient([])  # any AI call would fail: no scripted turns
@@ -283,7 +283,7 @@ def test_quick_follow_up_uses_previous_route():
 
     seen = []
 
-    def fake(query, budget, engine):
+    def fake(query, budget, engine, sort="best"):
         seen.append((query.origin, query.destination, query.depart.isoformat()))
         return {
             "offers": [],

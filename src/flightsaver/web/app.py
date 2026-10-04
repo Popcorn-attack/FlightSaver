@@ -74,11 +74,11 @@ class ChatRequest(BaseModel):
     engine: str = Field(default="rules", pattern="^(rules|jev)$")
 
 
-def _search_with_history(query, budget, engine):
+def _search_with_history(query, budget, engine, sort="best"):
     # SQLite connections are per-thread; searches run in a worker thread.
     history = PriceHistory(os.environ.get("FLIGHTSAVER_HISTORY", str(DEFAULT_PATH)))
     try:
-        return run_search(query, budget, engine, history=history)
+        return run_search(query, budget, engine, history=history, sort=sort)
     finally:
         history.close()
 

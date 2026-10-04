@@ -69,6 +69,14 @@ def parse(bodies: list[dict], query: SearchQuery, search_url: str) -> list[Fligh
                 if nm not in names:
                     names.append(nm)
             share = result.get("shareableUrl")
+            # Booking options sold by an airline itself use its IATA code as provider.
+            direct = [o for o in options if o.get("providerCode") in carriers]
+            cheapest_direct = min(direct, key=lambda o: o["displayPrice"]["price"], default=None)
+            self_transfer = any(
+                s.get("hasSelfTransfer") or s.get("isSelfTransfer")
+                for leg in result["legs"]
+                for s in leg.get("segments") or []
+            )
             offers.append(
                 FlightOffer(
                     source="kayak",
@@ -78,6 +86,18 @@ def parse(bodies: list[dict], query: SearchQuery, search_url: str) -> list[Fligh
                     legs=tuple(legs),
                     booking_url=BASE + share if share else search_url,
                     round_trip_price=query.round_trip,
+                    direct_price=(
+                        float(cheapest_direct["displayPrice"]["price"]) if cheapest_direct else None
+                    ),
+                    direct_seller=(
+                        airlines.name(
+                            cheapest_direct["providerCode"],
+                            (carriers.get(cheapest_direct["providerCode"]) or {}).get("name", ""),
+                        )
+                        if cheapest_direct
+                        else None
+                    ),
+                    self_transfer=self_transfer,
                 )
             )
     return offers

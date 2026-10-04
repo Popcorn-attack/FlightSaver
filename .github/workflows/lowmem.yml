@@ -1,0 +1,39 @@
+name: Low-memory probes
+
+# Can Trip.com/KAYAK/Ctrip work on a 512 MB host (Render free)?
+on:
+  push:
+    paths: ["probes/trip_http.py", "src/flightsaver/providers/browser.py", ".github/workflows/lowmem.yml"]
+  workflow_dispatch:
+
+jobs:
+  trip-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install playwright primp
+      - run: python -m playwright install --with-deps chromium
+      - run: python probes/trip_http.py
+
+  lean-512:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t flightsaver .
+      - name: Each browser source alone in 512 MB, lean mode
+        run: |
+          dep=$(date -d '+45 days' +%F)
+          for p in trip_com kayak ctrip; do
+            echo "===== $p"
+            docker run --rm --memory=512m --memory-swap=512m --shm-size=128m \
+              -e FLIGHTSAVER_BROWSER_LEAN=1 -e FLIGHTSAVER_BROWSER_CONCURRENCY=1 \
+              -e FLIGHTSAVER_PROVIDERS=$p flightsaver bash -c "
+                time flightsaver search LON SHANGHAI $dep --no-history --limit 1 2>&1 | grep -E 'sources|failed|GBP' | head -4;
+                echo peak_mb=\$((\$(cat /sys/fs/cgroup/memory.peak) / 1048576));
+                grep oom_kill /sys/fs/cgroup/memory.events" || true
+          done

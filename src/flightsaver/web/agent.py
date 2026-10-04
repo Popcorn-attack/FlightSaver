@@ -20,7 +20,7 @@ from datetime import date
 import anthropic
 
 from flightsaver.airports import CHINA_AIRPORTS, METROS, UK_AIRPORTS
-from flightsaver.web.tools import SEARCH_TOOL, compact_for_model, parse_args, run_search
+from flightsaver.web.tools import SEARCH_TOOL, SORTS, compact_for_model, parse_args, run_search
 
 # Haiku is the cheapest model and handles "parse the request, call one tool,
 # summarise" well. Set FLIGHTSAVER_MODEL to use a larger one.
@@ -118,7 +118,8 @@ class FlightAgent:
         except (ValueError, TypeError) as exc:
             return self._error(block.id, f"invalid input: {exc}"), None
         try:
-            data = await asyncio.to_thread(self.search_fn, query, budget, engine)
+            sort = block.input.get("sort") if block.input.get("sort") in SORTS else "best"
+            data = await asyncio.to_thread(self.search_fn, query, budget, engine, sort)
         except Exception as exc:  # a failed search must not break the conversation
             return self._error(block.id, f"search failed: {exc}"), None
         # The model gets a trimmed summary; the page renders the full result.
