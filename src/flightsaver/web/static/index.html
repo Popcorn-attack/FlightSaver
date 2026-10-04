@@ -196,7 +196,9 @@
       (q.return_date ? ` / ${esc(q.return_date)}` : "");
     let html = `<h3>${head} <span class="meta">· ${esc(q.cabin)} · ${q.adults} 人` +
       (q.round_trip_prices ? " · 往返总价" : "") +
-      ` · 找到 ${data.total_offers_found} 个</span></h3>`;
+      ` · 找到 ${data.total_offers_found} 个` +
+      (data.source_counts ? "（" + Object.entries(data.source_counts).map(([k, v]) =>
+        `${esc(SOURCES[k] || k)} ${v}`).join(" · ") + "）" : "") + `</span></h3>`;
     if (!data.offers.length) {
       const errs = Object.entries(data.source_errors || {}).map(([k, v]) => `${k}: ${v.split("\n")[0]}`);
       html += `<div class="empty">暂无实时报价${errs.length ? "（" + esc(errs.join("; ")) + "）" : ""}，可直接在下方平台搜索。</div>`;

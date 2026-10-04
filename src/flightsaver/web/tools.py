@@ -129,6 +129,7 @@ def run_search(
             {"name": x.name, "url": x.url, "prefilled": x.prefilled} for x in result.platform_links
         ],
         "airline_links": [{"name": x.name, "url": x.url} for x in result.airline_links],
+        "source_counts": result.source_counts,
         "source_errors": result.errors,
         "engine_note": note,
     }

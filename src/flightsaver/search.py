@@ -18,6 +18,7 @@ class SearchResult:
     platform_links: list[BookingLink]
     airline_links: list[BookingLink]
     errors: dict[str, str] = field(default_factory=dict)
+    source_counts: dict[str, int] = field(default_factory=dict)
 
 
 def dedupe(offers: list[FlightOffer]) -> list[FlightOffer]:
@@ -56,13 +57,17 @@ def to_currency(offers: list[FlightOffer], currency: str) -> list[FlightOffer]:
 def search(query: SearchQuery, providers: list[Provider]) -> SearchResult:
     offers: list[FlightOffer] = []
     errors: dict[str, str] = {}
+    counts: dict[str, int] = {}
     with ThreadPoolExecutor(max_workers=max(len(providers), 1)) as pool:
         futures = {pool.submit(p.search, query): p for p in providers}
         for future, provider in futures.items():
             try:
-                offers.extend(future.result())
+                found = future.result()
             except Exception as exc:
                 errors[provider.name] = str(exc)
+                continue
+            counts[provider.name] = len(found)
+            offers.extend(found)
 
     offers = dedupe(to_currency(offers, query.currency))
     carriers = sorted({name for o in offers for name in o.airlines})
@@ -73,4 +78,5 @@ def search(query: SearchQuery, providers: list[Provider]) -> SearchResult:
         # Carriers seen in results first; without results, list every known carrier.
         airline_links=airline_links(carriers if offers else None),
         errors=errors,
+        source_counts=counts,
     )

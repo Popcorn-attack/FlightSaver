@@ -78,6 +78,8 @@ def cmd_search(args: argparse.Namespace) -> int:
     if q.return_date:
         trip += f" / back {q.return_date}  (prices are round-trip totals)"
     print(trip)
+    if result.source_counts:
+        print("sources: " + ", ".join(f"{k} {v}" for k, v in result.source_counts.items()))
     for source, err in result.errors.items():
         print(f"  ! {source} failed: {err.splitlines()[0]}", file=sys.stderr)
     if note:

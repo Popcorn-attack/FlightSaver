@@ -40,8 +40,9 @@ jobs:
         run: |
           dep=$(date -d '+45 days' +%F); ret=$(date -d '+59 days' +%F)
           docker run --rm --memory=512m --memory-swap=512m --shm-size=256m \
-            -e FLIGHTSAVER_BROWSER_CONCURRENCY=1 flightsaver sh -c "
+            -e FLIGHTSAVER_BROWSER_CONCURRENCY=1 flightsaver bash -c "
               time uv run --no-sync flightsaver search LON SHANGHAI $dep --return $ret --no-history --limit 5;
-              echo exit=\$?;
+              code=\$?;
               echo peak_mb=\$((\$(cat /sys/fs/cgroup/memory.peak) / 1048576));
-              echo oom_events=\$(grep oom_kill /sys/fs/cgroup/memory.events)"
+              grep oom_kill /sys/fs/cgroup/memory.events;
+              exit \$code" 2>&1
