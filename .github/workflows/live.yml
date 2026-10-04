@@ -90,6 +90,7 @@ jobs:
             curl -s -X POST localhost:8000/api/search -H 'Content-Type: application/json' \
               -d "{\"message\": \"$q\"}" > out.json
             echo "== $q ($(( $(date +%s) - start ))s)"
+            grep -q '"message"' out.json || { head -c 600 out.json; echo; docker logs fs 2>&1 | tail -40; exit 1; }
             python3 -c "import json; d=json.load(open('out.json')); print(d.get('understood')); \
           print(d['message']); print('sources', d['data']['source_counts'], \
           'errors', d['data']['source_errors']); \
